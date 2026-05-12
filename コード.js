@@ -14,7 +14,24 @@ var NN_PAGES_SESSION_PREFIX = 'NN_PAGES_SESSION_';
 var NN_PAGES_SESSION_DAYS = 30;
 
 function nn_pagesApiJsonOut_(payload) {
-  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+  var out = ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+  try {
+    if (typeof out.setHeaders === 'function') {
+      return out.setHeaders({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS, GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      });
+    }
+  } catch (e) {
+    /* ランタイムが setHeaders 非対応の場合はヘッダーなし */
+  }
+  return out;
+}
+
+/** ブラウザの CORS プリフライト用（POST と同様のヘッダーを返す） */
+function doOptions() {
+  return nn_pagesApiJsonOut_({ ok: true });
 }
 
 /**
@@ -255,6 +272,7 @@ function nn_execApi(req) {
 /**
  * GitHub Pages 等（別オリジン）からの呼び出し用 JSON API。
  * ブラウザの CORS プリフライトを避けるため、クライアントは Content-Type: text/plain で JSON を送る。
+ * スクリプトプロパティ NICENOTES_PAGES_* が両方未設定のときは idToken / sessionToken 不要（オープン API）。
  *
  * POST body JSON: `{ "action": string, "args": any[], "idToken"?: string, "sessionToken"?: string }`
  * 応答: `{ "ok": true, "result": ... }` または `{ "ok": false, "error": string }`
@@ -273,13 +291,27 @@ function doPost(e) {
       return nn_pagesApiJsonOut_({ ok: false, error: 'Invalid JSON body' });
     }
 
-    const idt = nn_verifyGoogleIdToken_(body.idToken);
     const action = String(body.action || '');
     const strictAuth = nn_pagesAuthStrictEnabled_();
+
+    /** 両方のスクリプトプロパティ未設定時: セッション・ID トークン不要で API のみ受け付ける */
+    if (!strictAuth) {
+      try {
+        const argList = body.args !== undefined && body.args !== null ? body.args : [];
+        const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
+        return nn_pagesApiJsonOut_({ ok: true, result: result });
+      } catch (openErr) {
+        return nn_pagesApiJsonOut_({
+          ok: false,
+          error: openErr && openErr.message ? String(openErr.message) : String(openErr),
+        });
+      }
+    }
+
+    const idt = nn_verifyGoogleIdToken_(body.idToken);
     const allowedEmails = nn_pagesAllowedEmails_();
 
     function isAllowedEmail_(email) {
-      if (!strictAuth) return true;
       return allowedEmails.length > 0 && allowedEmails.indexOf(String(email || '').toLowerCase()) >= 0;
     }
 

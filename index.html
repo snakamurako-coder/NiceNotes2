@@ -220,7 +220,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script src="https://unpkg.com/dexie@4.0.10/dist/dexie.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -535,10 +534,15 @@
   </div>
 
   <script>
-    /** scripts.run で呼ぶ Apps Script の Script ID */
-    window.NN_SCRIPT_ID = '1SjKHvJ8uxCmYYfGlvA04eldJZJr7PB1yvPOlFES5c1AQzlwhvWU8Rea8';
-    /** Google Cloud OAuth 2.0 クライアント ID（Web） */
-    window.NN_GOOGLE_CLIENT_ID = '505252303455-84r495bnnsgiefcrv24ro2qtohlgbk2h.apps.googleusercontent.com';
+    /** scripts.run（Execution API）用。OAuth 無効時は空でよい */
+    window.NN_SCRIPT_ID = '';
+    /** OAuth 2.0 クライアント ID。空のときは GSI を読み込まず、Execution API も使わない */
+    window.NN_GOOGLE_CLIENT_ID = '';
+    /**
+     * 別オリジン（GitHub Pages 等）から認証なしで呼ぶときのウェブアプリ URL（デプロイの /exec）。
+     * スクリプトで NICENOTES_PAGES_* 両方未設定の「オープン」API と組み合わせる。
+     */
+    window.NN_GAS_WEB_APP_URL = '';
     window.NN_GOOGLE_ACCESS_TOKEN = '';
     window.NN_GOOGLE_ACCESS_EXPIRES_AT = 0;
     window.__nnOauthClient = null;
@@ -554,6 +558,45 @@
     function nnGoogleClientId() {
       var c = window.NN_GOOGLE_CLIENT_ID;
       return typeof c === 'string' ? c.trim() : '';
+    }
+    function nnGasWebAppUrl() {
+      var u = window.NN_GAS_WEB_APP_URL;
+      return typeof u === 'string' ? u.trim() : '';
+    }
+    /** OAuth 用 GSI を必要時のみ読み込む */
+    function nnLoadGsiScript_() {
+      return new Promise(function (resolve, reject) {
+        if (window.google && google.accounts && google.accounts.oauth2) {
+          resolve();
+          return;
+        }
+        var existing = document.querySelector('script[data-nn-gsi]');
+        if (existing) {
+          if (window.google && google.accounts && google.accounts.oauth2) {
+            resolve();
+            return;
+          }
+          existing.addEventListener('load', function () {
+            resolve();
+          });
+          existing.addEventListener('error', function () {
+            reject(new Error('Google GSI の読み込みに失敗しました'));
+          });
+          return;
+        }
+        var el = document.createElement('script');
+        el.src = 'https://accounts.google.com/gsi/client';
+        el.async = true;
+        el.defer = true;
+        el.setAttribute('data-nn-gsi', '1');
+        el.onload = function () {
+          resolve();
+        };
+        el.onerror = function () {
+          reject(new Error('Google GSI の読み込みに失敗しました'));
+        };
+        document.head.appendChild(el);
+      });
     }
     function nnOauthScopes() {
       return [
@@ -600,6 +643,8 @@
     }
 
     async function nnFetchNewAccessTokenOnce_() {
+      var cidPre = nnGoogleClientId();
+      if (cidPre) await nnLoadGsiScript_();
       var client = nnEnsureOauthClient();
       function requestToken(opts) {
         opts = opts || {};
@@ -674,8 +719,39 @@
           }
         });
       }
+      var webUrl = nnGasWebAppUrl();
+      if (webUrl) {
+        var payload = JSON.stringify({ action: action, args: args });
+        var pr = await fetch(webUrl, {
+          method: 'POST',
+          redirect: 'follow',
+          credentials: 'omit',
+          body: payload,
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }
+        });
+        var text = await pr.text();
+        var trimmed = text.replace(/^\uFEFF/, '').trim();
+        var data;
+        try {
+          data = JSON.parse(trimmed);
+        } catch (parseEx) {
+          throw new Error(
+            'NN: サーバー応答を JSON として解析できません (HTTP ' +
+              pr.status +
+              ')。NN_GAS_WEB_APP_URL が正しい /exec か確認してください。先頭: ' +
+              trimmed.slice(0, 120)
+          );
+        }
+        if (!data.ok) throw new Error(data.error || 'GAS API error');
+        return data.result;
+      }
       var scriptId = nnScriptId();
-      if (!scriptId) throw new Error('NN_SCRIPT_ID が未設定です。');
+      var oauthCid = nnGoogleClientId();
+      if (!scriptId || !oauthCid) {
+        throw new Error(
+          'NN: バックエンドに接続できません。次のいずれかを設定してください。(1) GAS ウェブアプリを開く（google.script.run が使える）(2) NN_GAS_WEB_APP_URL に /exec の URL (3) OAuth を使う場合は NN_SCRIPT_ID と NN_GOOGLE_CLIENT_ID'
+        );
+      }
       var token = await nnEnsureGoogleAccessToken();
       var r = await fetch('https://script.googleapis.com/v1/scripts/' + encodeURIComponent(scriptId) + ':run', {
         method: 'POST',
@@ -1881,6 +1957,8 @@
 
       function nnIsGas() {
         if (typeof google !== 'undefined' && google.script && google.script.run) return true;
+        var web = typeof window.NN_GAS_WEB_APP_URL === 'string' ? window.NN_GAS_WEB_APP_URL.trim() : '';
+        if (web) return true;
         var sid = typeof window.NN_SCRIPT_ID === 'string' ? window.NN_SCRIPT_ID.trim() : '';
         var cid = typeof window.NN_GOOGLE_CLIENT_ID === 'string' ? window.NN_GOOGLE_CLIENT_ID.trim() : '';
         return !!(sid && cid);
