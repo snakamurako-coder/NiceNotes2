@@ -12,7 +12,14 @@
     input[type="range"] { width: 90px; cursor: pointer; } 
     input[type="number"] { width: 45px; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; }
     button, select { padding: 6px 10px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; background: #fff;}
-    #folder-select { background: #f8f9fa; font-weight: bold; border-color: #aaa; }
+    #pdf-legacy-tools { align-items: center; gap: 8px; }
+    .folder-tree .folder-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 2px 0; min-height: 30px; }
+    .folder-tree .folder-row.drag-over { outline: 2px dashed #1a73e8; background: #e8f0fe; border-radius: 6px; }
+    .folder-tree .folder-mode-sel { font-size: 11px; max-width: 100px; padding: 2px 4px; }
+    .folder-tree .folder-drag-hint { cursor: grab; font-size: 12px; color: #5f6368; user-select: none; padding: 0 4px; }
+    .file-item { position: relative; }
+    .file-item.drag-over { outline: 2px dashed #0f9d58; border-radius: 8px; }
+    .file-item[draggable='true'] .file-name { cursor: grab; }
     #role-select { background: #e8eaed; font-weight: bold; border-color: #9aa0a6; color: #202124; }
     #role-select.role-presenter { background: #fce8e6; border-color: #ea4335; color: #c5221f; }
     #role-select.role-participant { background: #e6f4ea; border-color: #34a853; color: #137333; }
@@ -26,7 +33,9 @@
     #page-indicator { min-width: 60px; text-align: center; }
 
     #status { margin-left: auto; font-size: 12px; color: #888; text-align: right; flex-shrink: 0; padding-left: 10px; }
-    #viewer-container { margin-top: var(--ui-height); width: 100vw; height: calc(100vh - var(--ui-height)); overflow: auto; background: #555; overscroll-behavior: none; padding: 20px; box-sizing: border-box; display: none; }
+    #viewer-container { margin-top: var(--ui-height); width: 100vw; height: calc(100vh - var(--ui-height)); overflow: hidden; background: #555; overscroll-behavior: none; padding: 0; box-sizing: border-box; display: none; flex-direction: column; }
+    #viewer-container #nn-pdf-slot-tabs { flex-shrink: 0; }
+    #viewer-container #scroll-spacer { flex: 1; min-height: 0; overflow: auto; padding: 20px; box-sizing: border-box; }
     #scroll-spacer { position: relative; }
     #page-wrapper { position: absolute; top: 0; left: 0; background: #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); transform-origin: 0 0; }
     canvas { position: absolute; top: 0; left: 0; }
@@ -47,6 +56,8 @@
     .explorer-toolbar { padding: 10px 15px; background: #fafafa; border-bottom: 1px solid #e0e0e0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .explorer-body { display: flex; flex: 1; overflow: hidden; }
     .folder-tree { width: 30%; min-width: 160px; border-right: 1px solid #e0e0e0; overflow-y: auto; padding: 10px; background: #fdfdfd; }
+    .nn-folder-branch { margin-bottom: 2px; }
+    .nn-folder-children { margin-left: 12px; padding-left: 8px; border-left: 1px solid #e8eaed; }
     .folder-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; cursor: pointer; border-radius: 4px; font-size: 14px; color: #333; }
     .folder-item:hover { background: #e8eaed; }
     .folder-item.selected { background: #e8f0fe; color: var(--primary); font-weight: bold; }
@@ -78,7 +89,7 @@
     #btn-sort-order-meet { padding: 4px 8px; }
     #loader { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); color: white; display: flex; align-items: center; justify-content: center; z-index: 9999; font-size: 20px; font-weight: bold; display: none; flex-direction: column; gap: 10px; }
 
-    /* NiceNotes Phase 3 */
+    /* NiceNotes2 Phase 3 */
     .nn-mode-btn { flex-shrink: 0; }
     .nn-mode-btn.active-mode { background: #e8f0fe; border: 1px solid #1a73e8; font-weight: bold; }
     #nn-panel {
@@ -105,17 +116,40 @@
       display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow: auto;
     }
     #nn-editor label { font-size: 11px; color: #5f6368; display: block; margin-bottom: 2px; }
-    #nn-editor input[type="text"], #nn-editor textarea, #nn-editor input[type="date"] {
+    #nn-editor input[type="text"], #nn-editor textarea, #nn-editor input[type="date"], #nn-editor input[type="number"] {
       width: 100%; max-width: 480px; padding: 8px 10px; border: 1px solid #dadce0; border-radius: 6px; font-size: 14px; box-sizing: border-box;
     }
     #nn-editor textarea { min-height: 64px; resize: vertical; }
     #nn-editor-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .nn-ed-toggle-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .nn-ed-toggle-bar button {
+      font-size: 18px; line-height: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid #dadce0;
+      background: #fff; cursor: pointer;
+    }
+    .nn-ed-toggle-bar button[aria-expanded="true"] { background: #d2e3fc; border-color: #1a73e8; }
+    .nn-ed-section { border-left: 3px solid #1a73e8; padding-left: 10px; margin-top: 4px; }
+    .nn-ed-section select { max-width: 480px; width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #dadce0; font-size: 14px; box-sizing: border-box; }
+    .nn-weekday-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+    .nn-weekday-row label { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+    #nn-f-repeat-preview { font-size: 12px; color: #174ea6; margin-top: 4px; }
+    #nn-pdf-slot-tabs {
+      display: none; align-items: center; gap: 4px; padding: 6px 10px; background: #3c4043; border-bottom: 1px solid #202124;
+    }
+    #nn-pdf-slot-tabs.nn-visible { display: flex; }
+    #nn-pdf-slot-tabs button {
+      padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #5f6368; background: #303134; color: #e8eaed; cursor: pointer;
+    }
+    #nn-pdf-slot-tabs button.nn-slot-active { background: #1a73e8; border-color: #1a73e8; color: #fff; }
     #nn-task-list { flex: 1; overflow: auto; padding: 12px 14px 24px; }
     .nn-group-title { font-size: 12px; font-weight: 700; color: #5f6368; text-transform: uppercase; letter-spacing: 0.03em; margin: 16px 0 8px; }
     .nn-task-card {
       background: #fff; border: 1px solid #dadce0; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
       display: flex; align-items: flex-start; gap: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06);
     }
+    .nn-task-card.nn-task-dnd-source { cursor: grab; }
+    .nn-task-card.nn-task-dnd-source:active { cursor: grabbing; }
+    .nn-task-card.drag-over { outline: 2px dashed #1a73e8; background: #f8fbff; border-radius: 10px; }
+    .nn-task-subgroup-items { margin-bottom: 4px; }
     .nn-task-card.done { opacity: 0.72; }
     .nn-task-card input[type="checkbox"] { margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
     .nn-task-body { flex: 1; min-width: 0; }
@@ -133,7 +167,9 @@
     .nn-checklist-preview {
       list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: #3c4043;
     }
-    .nn-checklist-preview li { margin-bottom: 4px; }
+    .nn-checklist-preview li.nn-ci-dnd { margin-bottom: 4px; cursor: grab; border-radius: 6px; padding: 2px 0; }
+    .nn-checklist-preview li.nn-ci-dnd:active { cursor: grabbing; }
+    .nn-checklist-preview li.nn-ci-dnd.drag-over { outline: 2px dashed #0f9d58; background: #e6f4ea; }
     .nn-checklist-preview label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 13px; margin: 0; color: inherit; }
     .nn-checklist-preview input { margin-top: 2px; flex-shrink: 0; }
     .nn-ci-text.done { text-decoration: line-through; color: #5f6368; }
@@ -228,7 +264,7 @@
   <div id="nn-startup-overlay" aria-label="起動メニュー">
     <div class="nn-startup-inner">
       <div id="nn-startup-main">
-        <h2>NiceNotes</h2>
+        <h2>NiceNotes2</h2>
         <p class="nn-startup-lead">起動時の操作を選んでください</p>
         <div class="nn-startup-grid">
           <button type="button" class="nn-su-card" id="nn-su-quick-task">
@@ -381,7 +417,7 @@
 
   <div id="home-screen">
     <div class="home-header">
-      <h2>📁 会議資料ワークスペース</h2>
+      <h2>📁 NiceNotes2 ワークスペース</h2>
       <button type="button" onclick="closeHome()" id="btn-close-home" style="display:none; background:#e8eaed; border:none; padding:8px 15px; cursor:pointer;">✕ ビューアに戻る</button>
     </div>
     <div class="home-content">
@@ -400,7 +436,15 @@
           <button type="button" class="btn-meeting-action" style="background:#0f9d58;" onclick="openAddModal()">➕ データ追加</button>
           <span style="color:#aaa; font-size:12px;">|</span>
           <button type="button" class="file-btn-meet" onclick="loadFolderTree(true)">🔄 ツリーを最新に更新</button>
-          <label style="margin:0 0 0 10px; display:inline;">並び替え:</label>
+          <label style="margin:0 0 0 10px; display:inline;">ツリー並び:</label>
+          <select id="folder-structure-sort" onchange="nnOnFolderStructureSortChange()" title="手動順はドラッグで変更後に保存されます">
+            <option value="manual">手動（ドラッグ）</option>
+            <option value="name">名前で上書き</option>
+            <option value="updated">更新日時で上書き</option>
+            <option value="created">作成日時で上書き</option>
+          </select>
+          <span style="color:#aaa;font-size:12px;">|</span>
+          <label style="margin:0 0 0 10px; display:inline;">ファイル並び:</label>
           <select id="sort-type-meet" onchange="renderFilesMeet()">
             <option value="updated">更新日時 (新しい順)</option>
             <option value="created">作成日時 (新しい順)</option>
@@ -432,11 +476,8 @@
       </select>
       <span id="legacy-collab-disabled-hint" style="display:none;font-size:11px;color:#5f6368;max-width:160px;line-height:1.35;margin-left:6px;">一覧モードでは共有同期・発表者役割は利用できません</span>
     </div>
-    <div class="tool-group" id="pdf-legacy-tools">
-      <select id="folder-select" onchange="fetchFileList()">
-        <option value="seamless">シームレス管理</option>
-        <option value="single">個別ビューア</option>
-      </select>
+    <div class="tool-group" id="pdf-legacy-tools" style="display: none">
+      <span style="font-size: 11px; color: #5f6368">フォルダ内</span>
       <select id="file-select" onchange="onFileDropdownChanged()"></select>
     </div>
     
@@ -474,6 +515,12 @@
   </div>
 
   <div id="viewer-container">
+    <div id="nn-pdf-slot-tabs" aria-label="PDFスロット">
+      <span style="color:#9aa0a6;font-size:11px;margin-right:6px;">タブ</span>
+      <button type="button" data-slot="0" class="nn-pdf-slot-btn">1</button>
+      <button type="button" data-slot="1" class="nn-pdf-slot-btn">2</button>
+      <button type="button" data-slot="2" class="nn-pdf-slot-btn">3</button>
+    </div>
     <div id="scroll-spacer">
       <div id="page-wrapper">
         <canvas id="bg-canvas"></canvas>
@@ -484,7 +531,7 @@
     </div>
   </div>
 
-  <div id="nn-panel" aria-label="NiceNotes tasks">
+  <div id="nn-panel" aria-label="NiceNotes2 tasks">
     <div id="nn-banner" role="status">
       <span id="nn-banner-text">サーバー側のデータが更新されています。</span>
       <button type="button" onclick="nnPullServerOverwrite()">サーバーを取り込む</button>
@@ -498,33 +545,75 @@
     </div>
     <div id="nn-editor" style="display:none">
       <div><label for="nn-f-title">タイトル</label><input type="text" id="nn-f-title" autocomplete="off"></div>
-      <div><label for="nn-f-project">プロジェクト</label><input type="text" id="nn-f-project" autocomplete="off"></div>
-      <div><label for="nn-f-heading">見出し</label><input type="text" id="nn-f-heading" autocomplete="off"></div>
-      <div>
-        <label for="nn-f-start">開始（When / YYYY-MM-DD・空で「いつでも」）</label>
-        <input type="text" id="nn-f-start" placeholder="空欄 or 2026-05-12" autocomplete="off">
-        <div class="nn-start-shortcuts">
-          <button type="button" onclick="nnSetStartToday()">今日</button>
-          <button type="button" onclick="nnClearStart()">いつでもにする</button>
+      <div><label for="nn-f-notes">メモ</label><textarea id="nn-f-notes"></textarea></div>
+      <div class="nn-ed-toggle-bar">
+        <span style="font-size:11px;color:#5f6368;">オプション:</span>
+        <button type="button" id="nn-btn-sec-tag" aria-expanded="false" title="プロジェクト・見出し">🏷️</button>
+        <button type="button" id="nn-btn-sec-check" aria-expanded="false" title="チェックリスト">☑️</button>
+        <button type="button" id="nn-btn-sec-flag" aria-expanded="false" title="期限・繰り返し・表示開始">🚩</button>
+      </div>
+      <div id="nn-sec-tag" class="nn-ed-section" style="display:none">
+        <div><label for="nn-f-project-sel">プロジェクト</label>
+          <select id="nn-f-project-sel"></select>
+          <input type="text" id="nn-f-project" autocomplete="off" placeholder="新規名（「＋ 新規…」選択時）" style="margin-top:6px;">
         </div>
+        <div style="margin-top:8px;"><label for="nn-f-heading-sel">見出し</label>
+          <select id="nn-f-heading-sel"></select>
+          <input type="text" id="nn-f-heading" autocomplete="off" placeholder="新規見出し（「＋ 新規…」選択時）" style="margin-top:6px;">
+        </div>
+        <p style="font-size:11px;color:#5f6368;margin:6px 0 0;">未指定のまま保存するとプロジェクトは「インボックス」になります。</p>
       </div>
-      <div><label for="nn-f-due">期限（YYYY-MM-DD）</label><input type="text" id="nn-f-due" placeholder="2026-05-20" autocomplete="off"></div>
-      <div>
-        <label for="nn-f-repeat">繰り返し（ルーティーン）</label>
-        <select id="nn-f-repeat">
-          <option value="">なし</option>
-          <option value="daily">毎日</option>
-          <option value="weekly">毎週</option>
-          <option value="monthly">毎月</option>
-          <option value="yearly">毎年</option>
-        </select>
-      </div>
-      <div>
+      <div id="nn-sec-checklist" class="nn-ed-section" style="display:none">
         <label>チェックリスト</label>
         <div id="nn-checklist-rows"></div>
         <button type="button" onclick="nnAddChecklistRow()">＋ 項目を追加</button>
       </div>
-      <div><label for="nn-f-notes">メモ</label><textarea id="nn-f-notes"></textarea></div>
+      <div id="nn-sec-flag" class="nn-ed-section" style="display:none">
+        <div>
+          <label for="nn-f-start">開始（When / YYYY-MM-DD・空で「いつでも」）</label>
+          <input type="text" id="nn-f-start" placeholder="空欄 or 2026-05-12" autocomplete="off">
+          <div class="nn-start-shortcuts">
+            <button type="button" onclick="nnSetStartToday()">今日</button>
+            <button type="button" onclick="nnClearStart()">いつでもにする</button>
+          </div>
+        </div>
+        <div style="margin-top:8px;"><label for="nn-f-due">期限（YYYY-MM-DD）</label><input type="text" id="nn-f-due" placeholder="2026-05-20" autocomplete="off"></div>
+        <div style="margin-top:8px;">
+          <label for="nn-f-repeat-kind">繰り返し</label>
+          <select id="nn-f-repeat-kind">
+            <option value="">なし</option>
+            <option value="daily">毎日</option>
+            <option value="weeklyByDay">毎週（曜日を複数選択）</option>
+            <option value="monthlyDom">毎月（日付）</option>
+            <option value="monthlyNth">毎月（第n・曜日）</option>
+            <option value="monthly">毎月（従来・アンカーから+1ヶ月）</option>
+            <option value="yearly">毎年</option>
+          </select>
+        </div>
+        <div id="nn-repeat-weekly-wrap" style="display:none;margin-top:6px;">
+          <span style="font-size:11px;color:#5f6368;">曜日（月=1 … 日=7）</span>
+          <div class="nn-weekday-row" id="nn-repeat-dow-row"></div>
+        </div>
+        <div id="nn-repeat-month-dom-wrap" style="display:none;margin-top:6px;">
+          <label for="nn-f-repeat-dom">日にち（1〜31）</label>
+          <input type="number" id="nn-f-repeat-dom" min="1" max="31" value="1" style="max-width:120px;">
+        </div>
+        <div id="nn-repeat-month-nth-wrap" style="display:none;margin-top:6px;">
+          <label for="nn-f-repeat-nth">第</label>
+          <select id="nn-f-repeat-nth" style="max-width:100px;display:inline-block;">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="-1">最終</option>
+          </select>
+          <label for="nn-f-repeat-nth-dow" style="display:inline;margin-left:8px;">曜日</label>
+          <select id="nn-f-repeat-nth-dow" style="max-width:120px;display:inline-block;">
+            <option value="1">月</option><option value="2">火</option><option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option><option value="7">日</option>
+          </select>
+        </div>
+        <div style="margin-top:8px;">
+          <label for="nn-f-visible-lead">一覧に出すのは期限の何日前から</label>
+          <input type="number" id="nn-f-visible-lead" min="0" max="365" placeholder="空欄＝制限なし" style="max-width:160px;">
+          <div id="nn-f-repeat-preview"></div>
+        </div>
+      </div>
       <div id="nn-editor-actions">
         <button type="button" class="nn-primary" onclick="nnSaveEditor()">保存</button>
         <button type="button" onclick="nnHideEditor()">キャンセル</button>
@@ -534,170 +623,23 @@
   </div>
 
   <script>
-    /** scripts.run（Execution API）用。OAuth 無効時は空でよい */
-    window.NN_SCRIPT_ID = '';
-    /** OAuth 2.0 クライアント ID。空のときは GSI を読み込まず、Execution API も使わない */
-    window.NN_GOOGLE_CLIENT_ID = '';
-    /**
-     * 別オリジン（GitHub Pages 等）から認証なしで呼ぶときのウェブアプリ URL（デプロイの /exec）。
-     * スクリプトで NICENOTES_PAGES_* 両方未設定の「オープン」API と組み合わせる。
-     */
-    window.NN_GAS_WEB_APP_URL = '';
-    window.NN_GOOGLE_ACCESS_TOKEN = '';
-    window.NN_GOOGLE_ACCESS_EXPIRES_AT = 0;
-    window.__nnOauthClient = null;
-    /** 同時に複数 nnGasCall が走っても OAuth ポップアップは1回だけ */
-    window.__nnOauthTokenPromise = null;
-    var NN_OAUTH_BOOTSTRAP_KEY = 'nn_oauth_bootstrap_until';
-    var NN_OAUTH_BOOTSTRAP_DAYS = 30;
+    /** GitHub Actions がデプロイ時に検索置換注入（開発・clasp は空のまま） */
+    window.NN_GAS_EXEC_URL = '';
+    window.NN_GAS_API_TOKEN = '';
 
-    function nnScriptId() {
-      var s = window.NN_SCRIPT_ID;
-      return typeof s === 'string' ? s.trim() : '';
-    }
-    function nnGoogleClientId() {
-      var c = window.NN_GOOGLE_CLIENT_ID;
-      return typeof c === 'string' ? c.trim() : '';
-    }
-    function nnGasWebAppUrl() {
-      var u = window.NN_GAS_WEB_APP_URL;
+    function nnGasExecUrl() {
+      var u = window.NN_GAS_EXEC_URL;
       return typeof u === 'string' ? u.trim() : '';
     }
-    /** OAuth 用 GSI を必要時のみ読み込む */
-    function nnLoadGsiScript_() {
-      return new Promise(function (resolve, reject) {
-        if (window.google && google.accounts && google.accounts.oauth2) {
-          resolve();
-          return;
-        }
-        var existing = document.querySelector('script[data-nn-gsi]');
-        if (existing) {
-          if (window.google && google.accounts && google.accounts.oauth2) {
-            resolve();
-            return;
-          }
-          existing.addEventListener('load', function () {
-            resolve();
-          });
-          existing.addEventListener('error', function () {
-            reject(new Error('Google GSI の読み込みに失敗しました'));
-          });
-          return;
-        }
-        var el = document.createElement('script');
-        el.src = 'https://accounts.google.com/gsi/client';
-        el.async = true;
-        el.defer = true;
-        el.setAttribute('data-nn-gsi', '1');
-        el.onload = function () {
-          resolve();
-        };
-        el.onerror = function () {
-          reject(new Error('Google GSI の読み込みに失敗しました'));
-        };
-        document.head.appendChild(el);
-      });
-    }
-    function nnOauthScopes() {
-      return [
-        'https://www.googleapis.com/auth/script.projects',
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/tasks'
-      ].join(' ');
-    }
-    function nnOauthBootstrapped() {
-      try {
-        var t = parseInt(localStorage.getItem(NN_OAUTH_BOOTSTRAP_KEY) || '0', 10);
-        return !isNaN(t) && Date.now() < t;
-      } catch (e) {
-        return false;
-      }
-    }
-    function nnMarkOauthBootstrapped() {
-      try {
-        var until = Date.now() + NN_OAUTH_BOOTSTRAP_DAYS * 24 * 60 * 60 * 1000;
-        localStorage.setItem(NN_OAUTH_BOOTSTRAP_KEY, String(until));
-      } catch (e) {}
-    }
-    function nnEnsureOauthClient() {
-      if (window.__nnOauthClient) return window.__nnOauthClient;
-      var cid = nnGoogleClientId();
-      if (!cid) throw new Error('NN_GOOGLE_CLIENT_ID が未設定です。');
-      if (!window.google || !google.accounts || !google.accounts.oauth2) {
-        throw new Error('Google OAuth ライブラリの読み込みに失敗しました。');
-      }
-      window.__nnOauthClient = google.accounts.oauth2.initTokenClient({
-        client_id: cid,
-        scope: nnOauthScopes(),
-        callback: function () {}
-      });
-      return window.__nnOauthClient;
-    }
-    function nnOauthRetryable_(err) {
-      var m = err && err.message ? String(err.message) : String(err || '');
-      if (/popup_closed_by_user|access_denied|user_cancel/i.test(m)) return false;
-      if (/interaction_required|login_required|invalid_grant|session_expired/i.test(m)) return true;
-      return false;
-    }
-
-    async function nnFetchNewAccessTokenOnce_() {
-      var cidPre = nnGoogleClientId();
-      if (cidPre) await nnLoadGsiScript_();
-      var client = nnEnsureOauthClient();
-      function requestToken(opts) {
-        opts = opts || {};
-        return new Promise(function (resolve, reject) {
-          client.callback = function (resp) {
-            if (resp && resp.access_token) {
-              window.NN_GOOGLE_ACCESS_TOKEN = String(resp.access_token);
-              var expSec = Number(resp.expires_in || 3600);
-              window.NN_GOOGLE_ACCESS_EXPIRES_AT = Date.now() + Math.max(60, expSec - 30) * 1000;
-              resolve(window.NN_GOOGLE_ACCESS_TOKEN);
-              return;
-            }
-            reject(new Error(resp && resp.error ? String(resp.error) : 'OAuth token error'));
-          };
-          try {
-            client.requestAccessToken(opts);
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)));
-          }
-        });
-      }
-      var firstPrompt = nnOauthBootstrapped() ? undefined : 'consent';
-      try {
-        await requestToken(firstPrompt !== undefined ? { prompt: firstPrompt } : {});
-        nnMarkOauthBootstrapped();
-        return window.NN_GOOGLE_ACCESS_TOKEN;
-      } catch (e1) {
-        if (nnOauthRetryable_(e1)) {
-          await requestToken({ prompt: 'consent' });
-          nnMarkOauthBootstrapped();
-          return window.NN_GOOGLE_ACCESS_TOKEN;
-        }
-        throw e1;
-      }
-    }
-
-    async function nnEnsureGoogleAccessToken() {
-      if (window.NN_GOOGLE_ACCESS_TOKEN && Date.now() < Number(window.NN_GOOGLE_ACCESS_EXPIRES_AT || 0)) {
-        return window.NN_GOOGLE_ACCESS_TOKEN;
-      }
-      if (window.__nnOauthTokenPromise) {
-        return window.__nnOauthTokenPromise;
-      }
-      window.__nnOauthTokenPromise = nnFetchNewAccessTokenOnce_().finally(function () {
-        window.__nnOauthTokenPromise = null;
-      });
-      return window.__nnOauthTokenPromise;
+    function nnGasApiToken() {
+      var t = window.NN_GAS_API_TOKEN;
+      return typeof t === 'string' ? t.trim() : '';
     }
     /** google.script.run または Pages 向け POST API */
-    async function nnGasCall(action, args) {
+    function nnGasCall(action, args) {
       args = args || [];
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
-        return new Promise(function (resolve, reject) {
+      return new Promise(function (resolve, reject) {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
           try {
             var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (err) {
               var msg =
@@ -717,63 +659,41 @@
           } catch (e) {
             reject(e instanceof Error ? e : new Error(String(e)));
           }
-        });
-      }
-      var webUrl = nnGasWebAppUrl();
-      if (webUrl) {
-        var payload = JSON.stringify({ action: action, args: args });
-        var pr = await fetch(webUrl, {
-          method: 'POST',
-          redirect: 'follow',
-          credentials: 'omit',
-          body: payload,
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' }
-        });
-        var text = await pr.text();
-        var trimmed = text.replace(/^\uFEFF/, '').trim();
-        var data;
-        try {
-          data = JSON.parse(trimmed);
-        } catch (parseEx) {
-          throw new Error(
-            'NN: サーバー応答を JSON として解析できません (HTTP ' +
-              pr.status +
-              ')。NN_GAS_WEB_APP_URL が正しい /exec か確認してください。先頭: ' +
-              trimmed.slice(0, 120)
-          );
+          return;
         }
-        if (!data.ok) throw new Error(data.error || 'GAS API error');
-        return data.result;
-      }
-      var scriptId = nnScriptId();
-      var oauthCid = nnGoogleClientId();
-      if (!scriptId || !oauthCid) {
-        throw new Error(
-          'NN: バックエンドに接続できません。次のいずれかを設定してください。(1) GAS ウェブアプリを開く（google.script.run が使える）(2) NN_GAS_WEB_APP_URL に /exec の URL (3) OAuth を使う場合は NN_SCRIPT_ID と NN_GOOGLE_CLIENT_ID'
-        );
-      }
-      var token = await nnEnsureGoogleAccessToken();
-      var r = await fetch('https://script.googleapis.com/v1/scripts/' + encodeURIComponent(scriptId) + ':run', {
-        method: 'POST',
-        credentials: 'omit',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + token
-        },
-        body: JSON.stringify({
-          function: 'nn_execApi',
-          parameters: [{ action: action, args: args }],
-          devMode: false
+        var url = nnGasExecUrl();
+        var tok = nnGasApiToken();
+        if (!url || !tok) {
+          reject(new Error('GAS の exec URL と API トークンが index に設定されていません。'));
+          return;
+        }
+        fetch(url, {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ token: tok, action: action, args: args })
         })
+          .then(function (r) {
+            return r.text();
+          })
+          .then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e2) {
+              reject(new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200)));
+              return;
+            }
+            if (!data || !data.ok) {
+              reject(new Error(data && data.error ? data.error : 'API error'));
+              return;
+            }
+            resolve(data.result);
+          })
+          .catch(function (fetchErr) {
+            reject(fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)));
+          });
       });
-      var data = await r.json();
-      if (!r.ok) {
-        throw new Error((data && data.error && data.error.message) ? data.error.message : ('HTTP ' + r.status));
-      }
-      if (data && data.error && data.error.message) {
-        throw new Error(data.error.message);
-      }
-      return data && data.response ? data.response.result : null;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
@@ -788,7 +708,6 @@
     const pageIndicator = document.getElementById('page-indicator');
     const myLaserDot = document.getElementById('my-laser');
     
-    const folderSelect = document.getElementById('folder-select');
     const fileSelect = document.getElementById('file-select');
     const loader = document.getElementById('loader');
     const loaderText = document.getElementById('loader-text');
@@ -812,6 +731,8 @@
     let lastStrokeTime = Date.now();
     let lastLocalStrokeTime = 0;
     let treeData = { folders: [], files: [], folderColors: {} };
+    window.nnFolderViewModes = {};
+    window.nnTreeManualOrder = { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} };
     let currentFolderId = null;
     let sortOrderMeet = -1;
     let legacyFolderNavActive = false;
@@ -841,6 +762,143 @@
     let isPanning = false; let lastPanX = 0; let lastPanY = 0;
     let currentScale = 1.0; let initialPinchDist = 0; let initialScale = 1.0;
     let pinchFocusX = 0; let pinchFocusY = 0;
+
+    const NN_PDF_SLOT_COUNT = 3;
+    function nnEmptyPdfSlot() {
+      return {
+        fileId: null,
+        fileName: 'document.pdf',
+        pdfDocJs: null,
+        originalPdfBytes: null,
+        localStrokesByPage: {},
+        sharedStrokesByPage: {},
+        currentPageNum: 1,
+        totalPages: 0,
+        currentScale: 1.0,
+        scrollLeft: 0,
+        scrollTop: 0,
+        fileType: 'pdf',
+        currentImageObj: null
+      };
+    }
+    var nnPdfSlots = [nnEmptyPdfSlot(), nnEmptyPdfSlot(), nnEmptyPdfSlot()];
+    var nnActivePdfSlot = 0;
+
+    function nnPdfSlotTabsEl() {
+      return document.getElementById('nn-pdf-slot-tabs');
+    }
+    function nnUpdatePdfSlotTabStyles() {
+      var tabs = nnPdfSlotTabsEl();
+      if (!tabs) return;
+      tabs.querySelectorAll('.nn-pdf-slot-btn').forEach(function (btn) {
+        var i = parseInt(btn.getAttribute('data-slot'), 10);
+        var s = nnPdfSlots[i];
+        var has = !!(s && s.fileId);
+        btn.classList.toggle('nn-slot-active', i === nnActivePdfSlot);
+        var shortName = (s && s.fileName) ? s.fileName : '';
+        if (shortName.length > 14) shortName = shortName.slice(0, 12) + '…';
+        btn.textContent = has ? String(i + 1) + ': ' + shortName : String(i + 1) + ': 空';
+      });
+    }
+    function nnShowPdfSlotTabs(visible) {
+      var t = nnPdfSlotTabsEl();
+      if (!t) return;
+      if (visible) t.classList.add('nn-visible');
+      else t.classList.remove('nn-visible');
+    }
+    function nnSnapshotGlobalsToSlot(idx) {
+      var s = nnPdfSlots[idx];
+      if (!s) return;
+      s.fileId = currentFileId;
+      s.fileName = fileName;
+      s.pdfDocJs = pdfDocJs;
+      s.originalPdfBytes = originalPdfBytes;
+      s.localStrokesByPage = localStrokesByPage;
+      s.sharedStrokesByPage = sharedStrokesByPage;
+      s.currentPageNum = currentPageNum;
+      s.totalPages = totalPages;
+      s.currentScale = currentScale;
+      s.scrollLeft = viewerContainer ? viewerContainer.scrollLeft : 0;
+      s.scrollTop = viewerContainer ? viewerContainer.scrollTop : 0;
+      s.fileType = fileType;
+      s.currentImageObj = currentImageObj;
+    }
+    function nnApplySlotToGlobals(idx) {
+      var s = nnPdfSlots[idx];
+      currentFileId = s.fileId;
+      fileName = s.fileName || 'document.pdf';
+      pdfDocJs = s.pdfDocJs;
+      originalPdfBytes = s.originalPdfBytes;
+      localStrokesByPage = s.localStrokesByPage || {};
+      sharedStrokesByPage = s.sharedStrokesByPage || {};
+      currentPageNum = s.currentPageNum || 1;
+      totalPages = s.totalPages || 0;
+      currentScale = s.currentScale != null ? s.currentScale : 1.0;
+      fileType = s.fileType || 'pdf';
+      currentImageObj = s.currentImageObj;
+      if (viewerContainer) {
+        viewerContainer.scrollLeft = s.scrollLeft || 0;
+        viewerContainer.scrollTop = s.scrollTop || 0;
+      }
+    }
+    function nnDestroyPdfDocIfAny(slot) {
+      if (!slot || !slot.pdfDocJs) return;
+      try {
+        if (typeof slot.pdfDocJs.destroy === 'function') slot.pdfDocJs.destroy();
+      } catch (e) {}
+      slot.pdfDocJs = null;
+    }
+    function nnPickPdfSlotForNewLoad() {
+      if (!nnPdfSlots[nnActivePdfSlot].fileId) return nnActivePdfSlot;
+      var i;
+      for (i = 0; i < NN_PDF_SLOT_COUNT; i++) {
+        if (!nnPdfSlots[i].fileId) return i;
+      }
+      var which = window.prompt(
+        '3タブすべて使用中です。上書きするタブ番号を 1〜3 で入力（キャンセルは現在のタブを上書き）',
+        String(nnActivePdfSlot + 1)
+      );
+      var n = parseInt(which, 10);
+      if (isNaN(n) || n < 1 || n > 3) return nnActivePdfSlot;
+      return n - 1;
+    }
+    function nnPrepareSlotForIncomingLoad_() {
+      var targetSlot = nnPickPdfSlotForNewLoad();
+      if (targetSlot !== nnActivePdfSlot) {
+        nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+        nnActivePdfSlot = targetSlot;
+      }
+      nnDestroyPdfDocIfAny(nnPdfSlots[nnActivePdfSlot]);
+      nnPdfSlots[nnActivePdfSlot] = nnEmptyPdfSlot();
+      pdfDocJs = null;
+      originalPdfBytes = null;
+      currentImageObj = null;
+      totalPages = 0;
+    }
+    function nnWirePdfSlotTabsOnce() {
+      var tabs = nnPdfSlotTabsEl();
+      if (!tabs || tabs.dataset.nnWired) return;
+      tabs.dataset.nnWired = '1';
+      tabs.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('.nn-pdf-slot-btn');
+        if (!btn) return;
+        var idx = parseInt(btn.getAttribute('data-slot'), 10);
+        if (isNaN(idx) || idx === nnActivePdfSlot) return;
+        nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+        nnActivePdfSlot = idx;
+        nnApplySlotToGlobals(nnActivePdfSlot);
+        nnUpdatePdfSlotTabStyles();
+        if (pdfDocJs && fileType === 'pdf') {
+          renderPage(currentPageNum);
+        } else if (fileType === 'image' && currentImageObj) {
+          renderPage(1);
+        } else {
+          if (pageIndicator) pageIndicator.textContent = (totalPages || 0) + '/' + (totalPages || 0);
+        }
+        nnRefreshCollaborationToolbar();
+        updateFavoriteButtonStatus();
+      });
+    }
 
     const MIN_WIDTH = 0.5; const MAX_WIDTH = 30.0;
     function updateWidthFromSlider() {
@@ -872,6 +930,13 @@
     }
     window.nnVirtualPageDupFeatureAllowed = nnVirtualPageDupFeatureAllowed;
 
+    function nnUpdateLegacyToolsBarVisibility() {
+      var el = document.getElementById('pdf-legacy-tools');
+      if (!el) return;
+      var show = legacyFolderNavActive && fileSelect && fileSelect.options && fileSelect.options.length > 0;
+      el.style.display = show ? 'flex' : 'none';
+    }
+
     function nnRefreshCollaborationToolbar() {
       var active = nnMeetingRealtimeCollaborationActive();
       var hint = document.getElementById('legacy-collab-disabled-hint');
@@ -881,8 +946,9 @@
       roleSelect.style.cursor = active ? '' : 'not-allowed';
       roleSelect.title = active
         ? 'ホームの会議ワークスペースで開いたときのみリアルタイム共有が有効です'
-        : '上部のフォルダ一覧から開いているためリアルタイム共有・発表者役割は無効です';
+        : 'ホームで「シームレス」にしたフォルダ内一覧から開いているため、リアルタイム共有・発表者役割は無効です';
       applyRoleMeet();
+      nnUpdateLegacyToolsBarVisibility();
     }
 
     window.onload = function () {
@@ -896,15 +962,16 @@
             loadFolderTree(false);
             nnPreloadLastPdfInBackground();
             startupWireMainMenu();
+            nnWirePdfSlotTabsOnce();
             showStartupGate();
           } else {
             alert(res && res.error ? res.error : '初期化に失敗しました');
-            fetchFileList();
+            loadFolderTree(false);
           }
         })
         .catch(function () {
           hideLoader();
-          fetchFileList();
+          loadFolderTree(false);
         });
     };
     function showLoader(text) { loaderText.textContent = text; loader.style.display = 'flex'; }
@@ -993,7 +1060,10 @@
 
     function showHomeMeet() {
       stopMeetSync();
-      if (currentFileId) autoSaveCurrent(true);
+      if (currentFileId) {
+        autoSaveCurrent(true);
+        nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+      }
       if (btnCloseHome) btnCloseHome.style.display = currentFileId ? 'block' : 'none';
       homeScreen.style.display = 'flex';
       viewerContainer.style.display = 'none';
@@ -1011,20 +1081,469 @@
     function closeHome() {
       if (!currentFileId) return;
       homeScreen.style.display = 'none';
-      viewerContainer.style.display = 'block';
+      viewerContainer.style.display = 'flex';
+      nnUpdatePdfSlotTabStyles();
+      nnShowPdfSlotTabs(true);
+      nnWirePdfSlotTabsOnce();
       nnRefreshCollaborationToolbar();
+    }
+
+    function nnMergeIdOrder(manualArr, sortedAllIds) {
+      var seen = {};
+      var out = [];
+      var i;
+      if (Array.isArray(manualArr)) {
+        for (i = 0; i < manualArr.length; i++) {
+          var id = String(manualArr[i]);
+          if (sortedAllIds.indexOf(id) !== -1 && !seen[id]) {
+            seen[id] = true;
+            out.push(id);
+          }
+        }
+      }
+      for (i = 0; i < sortedAllIds.length; i++) {
+        var id2 = sortedAllIds[i];
+        if (!seen[id2]) {
+          seen[id2] = true;
+          out.push(id2);
+        }
+      }
+      return out;
+    }
+
+    function nnSortFolderRecords(recs, key) {
+      var desc = key !== 'name';
+      return recs.slice().sort(function (a, b) {
+        var va;
+        var vb;
+        if (key === 'name') {
+          va = String(a.name || '').toLowerCase();
+          vb = String(b.name || '').toLowerCase();
+        } else {
+          va = a[key] != null ? Number(a[key]) : 0;
+          vb = b[key] != null ? Number(b[key]) : 0;
+        }
+        if (va < vb) return desc ? 1 : -1;
+        if (va > vb) return desc ? -1 : 1;
+        return 0;
+      });
+    }
+
+    function nnSortFileRecords(files, sortType, ord) {
+      return files.slice().sort(function (a, b) {
+        var valA = sortType === 'name' ? String(a.name || '').toLowerCase() : a[sortType];
+        var valB = sortType === 'name' ? String(b.name || '').toLowerCase() : b[sortType];
+        if (valA < valB) return -1 * ord;
+        if (valA > valB) return 1 * ord;
+        return 0;
+      });
+    }
+
+    function nnStructureDefaultKey() {
+      var sel = document.getElementById('folder-structure-sort');
+      var v = sel ? sel.value : 'manual';
+      return v === 'manual' ? 'name' : v;
+    }
+
+    function nnApplyWorkspacePrefs_(prefs) {
+      window.nnFolderViewModes =
+        prefs && prefs.folderViewModes && typeof prefs.folderViewModes === 'object' ? prefs.folderViewModes : {};
+      var o = prefs && prefs.treeManualOrder && typeof prefs.treeManualOrder === 'object' ? prefs.treeManualOrder : {};
+      window.nnTreeManualOrder = {
+        v: o.v != null ? o.v : 1,
+        rootFolderIds: Array.isArray(o.rootFolderIds) ? o.rootFolderIds.slice() : [],
+        childFolders:
+          typeof o.childFolders === 'object' && o.childFolders
+            ? JSON.parse(JSON.stringify(o.childFolders))
+            : {},
+        filesByFolder:
+          typeof o.filesByFolder === 'object' && o.filesByFolder
+            ? JSON.parse(JSON.stringify(o.filesByFolder))
+            : {},
+      };
+    }
+
+    function nnOrderedRootFolderIds() {
+      var recs = (treeData.folders || []).filter(function (f) {
+        return f.parentId === null;
+      });
+      var key = nnStructureDefaultKey();
+      var sorted = nnSortFolderRecords(recs, key).map(function (f) {
+        return f.id;
+      });
+      return nnMergeIdOrder(window.nnTreeManualOrder.rootFolderIds || [], sorted);
+    }
+
+    function nnOrderedChildFolderIds(parentId) {
+      var recs = (treeData.folders || []).filter(function (f) {
+        return f.parentId === parentId;
+      });
+      var key = nnStructureDefaultKey();
+      var sorted = nnSortFolderRecords(recs, key).map(function (f) {
+        return f.id;
+      });
+      var manual = (window.nnTreeManualOrder.childFolders || {})[parentId] || [];
+      return nnMergeIdOrder(manual, sorted);
+    }
+
+    function nnDefaultSortedFileIds(folderId) {
+      var sortEl = document.getElementById('sort-type-meet');
+      var sortType = sortEl ? sortEl.value : 'updated';
+      var files = (treeData.files || []).filter(function (f) {
+        return f.folderId === folderId;
+      });
+      return nnSortFileRecords(files, sortType, sortOrderMeet).map(function (f) {
+        return f.id;
+      });
+    }
+
+    function nnOrderedFileIdsForFolder(folderId) {
+      var manual = (window.nnTreeManualOrder.filesByFolder || {})[folderId] || [];
+      return nnMergeIdOrder(manual, nnDefaultSortedFileIds(folderId));
+    }
+
+    function nnFirstOrderedFolderId() {
+      var roots = nnOrderedRootFolderIds();
+      if (!roots.length) return null;
+      var cur = roots[0];
+      while (true) {
+        var kids = nnOrderedChildFolderIds(cur);
+        if (!kids.length) return cur;
+        cur = kids[0];
+      }
+    }
+
+    function nnTreeParentOfFolder_(folderId) {
+      var rec = (treeData.folders || []).find(function (x) {
+        return x.id === folderId;
+      });
+      return rec ? rec.parentId : null;
+    }
+
+    function nnFolderDropZone(ev, rowEl) {
+      var r = rowEl.getBoundingClientRect();
+      var y = ev.clientY - r.top;
+      var h = r.height || 1;
+      if (y < h * 0.25) return 'before';
+      if (y > h * 0.75) return 'after';
+      return 'inside';
+    }
+
+    function nnFileDropZone(ev, rowEl) {
+      return nnFolderDropZone(ev, rowEl);
+    }
+
+    function nnRebuildManualOrderFromStructureSort(structKey) {
+      var folders = treeData.folders || [];
+      var o = { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} };
+      var rootRecs = folders.filter(function (f) {
+        return f.parentId === null;
+      });
+      var sortedRoots = nnSortFolderRecords(rootRecs, structKey);
+      o.rootFolderIds = sortedRoots.map(function (x) {
+        return x.id;
+      });
+      function visitFolder(fid) {
+        var kids = folders.filter(function (f) {
+          return f.parentId === fid;
+        });
+        if (!kids.length) return;
+        var sortedKids = nnSortFolderRecords(kids, structKey);
+        o.childFolders[fid] = sortedKids.map(function (x) {
+          return x.id;
+        });
+        var i;
+        for (i = 0; i < sortedKids.length; i++) visitFolder(sortedKids[i].id);
+      }
+      var r;
+      for (r = 0; r < o.rootFolderIds.length; r++) visitFolder(o.rootFolderIds[r]);
+      var fileSortEl = document.getElementById('sort-type-meet');
+      var st = fileSortEl ? fileSortEl.value : 'updated';
+      var fi;
+      for (fi = 0; fi < folders.length; fi++) {
+        var folderId = folders[fi].id;
+        var files = (treeData.files || []).filter(function (g) {
+          return g.folderId === folderId;
+        });
+        var sortedFiles = nnSortFileRecords(files, st, sortOrderMeet);
+        o.filesByFolder[folderId] = sortedFiles.map(function (x) {
+          return x.id;
+        });
+      }
+      return o;
+    }
+
+    function nnOnFolderStructureSortChange() {
+      var sel = document.getElementById('folder-structure-sort');
+      var v = sel ? sel.value : 'manual';
+      if (v === 'manual') {
+        renderFolders();
+        return;
+      }
+      if (!treeData || !treeData.folders) return;
+      var o = nnRebuildManualOrderFromStructureSort(v);
+      window.nnTreeManualOrder = o;
+      nnGasCall('nn_setTreeManualOrder', [o])
+        .then(function () {
+          renderFolders();
+        })
+        .catch(function (e) {
+          alert(e && e.message ? e.message : String(e));
+        });
+    }
+
+    function nnReorderFolderAmongSiblingsThenPersist_(dragId, targetId, zone, parentId) {
+      var o = window.nnTreeManualOrder;
+      var cur = parentId == null ? nnOrderedRootFolderIds() : nnOrderedChildFolderIds(parentId);
+      cur = cur.slice();
+      var without = cur.filter(function (x) {
+        return x !== dragId;
+      });
+      var idx = without.indexOf(targetId);
+      var insertAt =
+        zone === 'before' ? (idx === -1 ? 0 : idx) : idx === -1 ? without.length : idx + 1;
+      var newArr = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+      if (parentId == null) o.rootFolderIds = newArr;
+      else {
+        if (!o.childFolders) o.childFolders = {};
+        o.childFolders[parentId] = newArr;
+      }
+      return nnGasCall('nn_setTreeManualOrder', [o]).then(function () {
+        renderFolders();
+      });
+    }
+
+    function nnReorderFileInFolderPersist_(dragId, targetId, zone) {
+      var o = window.nnTreeManualOrder;
+      var cur = nnOrderedFileIdsForFolder(currentFolderId).slice();
+      var without = cur.filter(function (x) {
+        return x !== dragId;
+      });
+      var idx = without.indexOf(targetId);
+      var insertAt =
+        zone === 'before' ? (idx === -1 ? 0 : idx) : idx === -1 ? without.length : idx + 1;
+      var newArr = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+      if (!o.filesByFolder) o.filesByFolder = {};
+      o.filesByFolder[currentFolderId] = newArr;
+      return nnGasCall('nn_setTreeManualOrder', [o]).then(function () {
+        renderFilesMeet();
+      });
+    }
+
+    function nnPopulateFileSelectFromFolder_(folderId, preferredFileId) {
+      fileSelect.innerHTML = '';
+      var ids = nnOrderedFileIdsForFolder(folderId);
+      var byId = {};
+      (treeData.files || []).forEach(function (f) {
+        byId[f.id] = f;
+      });
+      var j;
+      for (j = 0; j < ids.length; j++) {
+        var oid = ids[j];
+        var fr = byId[oid];
+        if (!fr) continue;
+        var opt = document.createElement('option');
+        opt.value = oid;
+        opt.textContent = fr.name || 'file';
+        fileSelect.appendChild(opt);
+      }
+      if (preferredFileId && byId[preferredFileId]) {
+        fileSelect.value = preferredFileId;
+      }
+      currentFileId = fileSelect.value || preferredFileId;
+      if (fileSelect.selectedIndex >= 0 && fileSelect.options.length) {
+        fileName = fileSelect.options[fileSelect.selectedIndex].text;
+      } else {
+        fileName = (byId[preferredFileId] && byId[preferredFileId].name) || 'document.pdf';
+      }
+    }
+
+    function nnWireFolderRowInteraction_(row, folderId) {
+      row.addEventListener('dragstart', function (ev) {
+        if (ev.target.closest && ev.target.closest('select,button')) {
+          ev.preventDefault();
+          return;
+        }
+        ev.dataTransfer.setData('text/plain', JSON.stringify({ t: 'folder', id: folderId }));
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', function () {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('dragend', function () {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault();
+        row.classList.remove('drag-over');
+        var raw = ev.dataTransfer.getData('text/plain');
+        var payload = null;
+        try {
+          payload = JSON.parse(raw);
+        } catch (e2) {
+          return;
+        }
+        if (!payload || !payload.t) return;
+        var zone = nnFolderDropZone(ev, row);
+        if (payload.t === 'file') {
+          if (zone !== 'inside') return;
+          if (payload.srcFolder === folderId) return;
+          if (
+            !confirm(
+              'ファイル「' +
+                (payload.name || payload.id) +
+                '」をこのフォルダに移動しますか？\n（Google Drive 上で移動します。共有ドライブや権限によっては失敗することがあります）'
+            )
+          )
+            return;
+          nnGasCall('nn_moveDriveFile', [payload.id, folderId])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+          return;
+        }
+        if (payload.t !== 'folder') return;
+        var dragId = payload.id;
+        if (dragId === folderId) return;
+        var pT = nnTreeParentOfFolder_(folderId);
+        var pD = nnTreeParentOfFolder_(dragId);
+        if (zone === 'inside') {
+          if (!confirm('フォルダをこの中に移動しますか？（Drive の親フォルダが変わります）')) return;
+          nnGasCall('nn_moveDriveFolder', [dragId, folderId])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+          return;
+        }
+        if (zone === 'before' || zone === 'after') {
+          if (pT === null && pD !== null) {
+            alert(
+              'ルートと同じ列への移動は、Drive 上の親がワークスペース外の場合があります。別のフォルダへ入れ子にする操作を試してください。'
+            );
+            return;
+          }
+          if (pT === pD || (pT === null && pD === null)) {
+            if (!confirm('フォルダの表示順のみを変更します（Drive の親は変えません）。よろしいですか？')) return;
+            nnReorderFolderAmongSiblingsThenPersist_(dragId, folderId, zone, pT).catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+            return;
+          }
+          var newPar = pT;
+          if (newPar === null) {
+            alert('この並べ替えは未対応です。');
+            return;
+          }
+          if (!confirm('フォルダの親を変更して、この近くに移しますか？（Drive 上で移動）')) return;
+          nnGasCall('nn_moveDriveFolder', [dragId, newPar])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+        }
+      });
+    }
+
+    function nnBuildFolderBranch_(folderId) {
+      var wrap = document.createElement('div');
+      wrap.className = 'nn-folder-branch';
+      var colors = treeData.folderColors || {};
+      var folderColor = colors[folderId] || '#ccc';
+      var row = document.createElement('div');
+      row.className = 'folder-item folder-row' + (currentFolderId === folderId ? ' selected' : '');
+      row.setAttribute('data-folder-id', folderId);
+      row.draggable = true;
+      var hint = document.createElement('span');
+      hint.className = 'folder-drag-hint';
+      hint.textContent = '⠿';
+      hint.title = 'ドラッグ: 行の上／下＝表示順、中央＝このフォルダの中へ移動';
+      var label = document.createElement('div');
+      label.className = 'folder-label';
+      var dot = document.createElement('span');
+      dot.className = 'color-dot';
+      dot.style.backgroundColor = folderColor;
+      label.appendChild(dot);
+      var rec = (treeData.folders || []).find(function (x) {
+        return x.id === folderId;
+      });
+      label.appendChild(document.createTextNode(' 📁 ' + ((rec && rec.name) || '')));
+      label.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('button,select')) return;
+        selectFolderMeet(folderId);
+      });
+      var modeSel = document.createElement('select');
+      modeSel.className = 'folder-mode-sel';
+      modeSel.title = '書き込み画面でこのフォルダを開くときの挙動';
+      [['single', '個別'], ['seamless', 'シームレス']].forEach(function (pair) {
+        var op = document.createElement('option');
+        op.value = pair[0];
+        op.textContent = pair[1];
+        modeSel.appendChild(op);
+      });
+      var stored = window.nnFolderViewModes[folderId] === 'seamless' ? 'seamless' : 'single';
+      modeSel.value = stored;
+      modeSel.addEventListener('change', function () {
+        var v = modeSel.value;
+        nnGasCall('nn_setFolderViewMode', [folderId, v])
+          .then(function () {
+            window.nnFolderViewModes[folderId] = v;
+          })
+          .catch(function (er) {
+            alert(er && er.message ? er.message : String(er));
+            modeSel.value = stored;
+          });
+      });
+      var palBtn = document.createElement('button');
+      palBtn.type = 'button';
+      palBtn.className = 'btn-palette';
+      palBtn.title = '色を変更';
+      palBtn.textContent = '🎨';
+      palBtn.addEventListener('click', function (ev) {
+        openColorPalette(ev, folderId);
+      });
+      row.appendChild(hint);
+      row.appendChild(label);
+      row.appendChild(modeSel);
+      row.appendChild(palBtn);
+      nnWireFolderRowInteraction_(row, folderId);
+      var kidsWrap = document.createElement('div');
+      kidsWrap.className = 'nn-folder-children';
+      nnOrderedChildFolderIds(folderId).forEach(function (cid) {
+        kidsWrap.appendChild(nnBuildFolderBranch_(cid));
+      });
+      wrap.appendChild(row);
+      wrap.appendChild(kidsWrap);
+      return wrap;
     }
 
     function loadFolderTree(forceRefresh) {
       var ts = document.getElementById('tree-status');
       if (ts) ts.textContent = 'データ取得中...';
       if (forceRefresh) showLoader('ドライブをスキャン中... (数秒かかります)');
-      nnGasCall('getFolderTree', [forceRefresh])
+      return nnGasCall('getFolderTree', [forceRefresh])
         .then(function (data) {
           if (forceRefresh) hideLoader();
           treeData = data || { folders: [], files: [], folderColors: {} };
           var lu = treeData.lastUpdated ? new Date(treeData.lastUpdated).toLocaleString() : '';
           if (ts) ts.textContent = lu ? '最終更新: ' + lu : '';
+          return nnGasCall('nn_getWorkspacePrefs', []).catch(function () {
+            return null;
+          });
+        })
+        .then(function (prefs) {
+          if (prefs) nnApplyWorkspacePrefs_(prefs);
           renderFolders();
         })
         .catch(function () {
@@ -1037,40 +1556,31 @@
       var container = document.getElementById('folder-tree-container');
       if (!container) return;
       container.innerHTML = '';
-      var colors = treeData.folderColors || {};
-      (treeData.folders || []).forEach(function (f) {
-        var div = document.createElement('div');
-        div.className = 'folder-item' + (f.id === currentFolderId ? ' selected' : '');
-        var folderColor = colors[f.id] || '#ccc';
-        var label = document.createElement('div');
-        label.className = 'folder-label';
-        var dot = document.createElement('span');
-        dot.className = 'color-dot';
-        dot.style.backgroundColor = folderColor;
-        label.appendChild(dot);
-        label.appendChild(document.createTextNode(' 📁 ' + (f.name || '')));
-        label.addEventListener('click', function () { selectFolderMeet(f.id); });
-        var palBtn = document.createElement('button');
-        palBtn.type = 'button';
-        palBtn.className = 'btn-palette';
-        palBtn.title = '色を変更';
-        palBtn.textContent = '🎨';
-        palBtn.addEventListener('click', function (ev) { openColorPalette(ev, f.id); });
-        div.appendChild(label);
-        div.appendChild(palBtn);
-        container.appendChild(div);
-      });
-      if (!currentFolderId && treeData.folders && treeData.folders.length > 0) {
-        currentFolderId = treeData.folders[0].id;
-        renderFolders();
+      if (!(treeData.folders && treeData.folders.length)) {
+        currentFolderId = null;
         renderFilesMeet();
+        return;
       }
+      if (
+        currentFolderId &&
+        !(treeData.folders || []).some(function (x) {
+          return x.id === currentFolderId;
+        })
+      ) {
+        currentFolderId = null;
+      }
+      if (!currentFolderId) {
+        currentFolderId = nnFirstOrderedFolderId();
+      }
+      nnOrderedRootFolderIds().forEach(function (rid) {
+        container.appendChild(nnBuildFolderBranch_(rid));
+      });
+      renderFilesMeet();
     }
 
     function selectFolderMeet(id) {
       currentFolderId = id;
       renderFolders();
-      renderFilesMeet();
     }
 
     function toggleSortOrderMeet() {
@@ -1085,23 +1595,60 @@
       if (!container) return;
       container.innerHTML = '';
       if (!currentFolderId) return;
-      var sortEl = document.getElementById('sort-type-meet');
-      var sortType = sortEl ? sortEl.value : 'updated';
-      var files = (treeData.files || []).filter(function (f) { return f.folderId === currentFolderId; });
-      files.sort(function (a, b) {
-        var valA = sortType === 'name' ? String(a.name || '').toLowerCase() : a[sortType];
-        var valB = sortType === 'name' ? String(b.name || '').toLowerCase() : b[sortType];
-        if (valA < valB) return -1 * sortOrderMeet;
-        if (valA > valB) return 1 * sortOrderMeet;
-        return 0;
+      var ids = nnOrderedFileIdsForFolder(currentFolderId);
+      var byId = {};
+      (treeData.files || []).forEach(function (f) {
+        byId[f.id] = f;
       });
-      if (files.length === 0) {
+      if (!ids.length) {
         container.innerHTML = '<div style="padding:10px;color:#888;">ファイルがありません</div>';
         return;
       }
-      files.forEach(function (f) {
+      ids.forEach(function (fid) {
+        var f = byId[fid];
+        if (!f) return;
         var div = document.createElement('div');
         div.className = 'file-item';
+        div.setAttribute('data-file-id', f.id);
+        div.draggable = true;
+        div.addEventListener('dragstart', function (ev) {
+          if (ev.target.closest && ev.target.closest('button')) {
+            ev.preventDefault();
+            return;
+          }
+          ev.dataTransfer.setData(
+            'text/plain',
+            JSON.stringify({ t: 'file', id: f.id, srcFolder: f.folderId, name: f.name })
+          );
+          ev.dataTransfer.effectAllowed = 'move';
+        });
+        div.addEventListener('dragover', function (ev) {
+          ev.preventDefault();
+          div.classList.add('drag-over');
+        });
+        div.addEventListener('dragleave', function () {
+          div.classList.remove('drag-over');
+        });
+        div.addEventListener('dragend', function () {
+          div.classList.remove('drag-over');
+        });
+        div.addEventListener('drop', function (ev) {
+          ev.preventDefault();
+          div.classList.remove('drag-over');
+          var raw = ev.dataTransfer.getData('text/plain');
+          var payload = null;
+          try {
+            payload = JSON.parse(raw);
+          } catch (e3) {
+            return;
+          }
+          if (!payload || payload.t !== 'file' || payload.srcFolder !== currentFolderId) return;
+          if (payload.id === f.id) return;
+          var z = nnFileDropZone(ev, div);
+          nnReorderFileInFolderPersist_(payload.id, f.id, z).catch(function (er) {
+            alert(er && er.message ? er.message : String(er));
+          });
+        });
         var nameEl = document.createElement('div');
         nameEl.className = 'file-name';
         nameEl.textContent = '📄 ' + (f.name || '');
@@ -1113,7 +1660,9 @@
         openBtn.type = 'button';
         openBtn.className = 'file-btn-meet';
         openBtn.textContent = '開く';
-        openBtn.onclick = function () { openFileFromHome(f.id, f.name); };
+        openBtn.onclick = function () {
+          openFileFromHome(f.id, f.name, f.folderId);
+        };
         meta.appendChild(dateSpan);
         meta.appendChild(openBtn);
         div.appendChild(nameEl);
@@ -1194,16 +1743,40 @@
       btnFavorite.innerHTML = isFav ? '⭐' : '☆';
     }
 
-    function openFileFromHome(id, name) {
-      legacyFolderNavActive = false;
-      currentFileId = id;
-      fileName = name || 'document.pdf';
+    function openFileFromHome(id, name, folderIdOpt) {
+      if (currentFileId) {
+        autoSaveCurrent(true);
+        nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+      }
+      var treeRec = null;
+      var k;
+      var flist = treeData.files || [];
+      for (k = 0; k < flist.length; k++) {
+        if (flist[k].id === id) {
+          treeRec = flist[k];
+          break;
+        }
+      }
+      var effFolderId =
+        folderIdOpt !== undefined && folderIdOpt !== null ? folderIdOpt : treeRec ? treeRec.folderId : null;
+      var seamless = effFolderId && window.nnFolderViewModes[effFolderId] === 'seamless';
+
+      if (seamless && effFolderId) {
+        legacyFolderNavActive = true;
+        nnPopulateFileSelectFromFolder_(effFolderId, id);
+      } else {
+        legacyFolderNavActive = false;
+        fileSelect.innerHTML = '';
+        currentFileId = id;
+        fileName = name || 'document.pdf';
+      }
+
       try {
-        localStorage.setItem('last_opened_file', JSON.stringify({ id: id, name: fileName }));
+        localStorage.setItem('last_opened_file', JSON.stringify({ id: currentFileId, name: fileName }));
       } catch (e) {}
       updateFavoriteButtonStatus();
       homeScreen.style.display = 'none';
-      viewerContainer.style.display = 'block';
+      viewerContainer.style.display = 'flex';
       var nnPanel = document.getElementById('nn-panel');
       if (nnPanel) nnPanel.style.display = 'none';
       var pdfBtn = document.getElementById('btn-mode-pdf');
@@ -1213,6 +1786,7 @@
         pdfBtn.classList.add('active-mode');
       }
       loadSelectedFile(false, false);
+      nnUpdateLegacyToolsBarVisibility();
     }
 
     function applyRoleMeet() {
@@ -1236,6 +1810,7 @@
 
     function pushMeetingState() {
       if (!nnMeetingRealtimeCollaborationActive() || !currentFileId) return;
+      /* 会議同期はアクティブ PDF タブ（nnActivePdfSlot）の currentFileId のみを送る */
       var state = {
         fileId: currentFileId,
         fileName: fileName,
@@ -1287,40 +1862,6 @@
           redraw();
         })
         .catch(function () {});
-    }
-
-    function fetchFileList() {
-      var mode = folderSelect.value;
-      showLoader('ファイル一覧を取得中...');
-      legacyFolderNavActive = true;
-      nnRefreshCollaborationToolbar();
-      homeScreen.style.display = 'none';
-      viewerContainer.style.display = 'block';
-      nnGasCall('getFileList', [mode])
-        .then(function (list) {
-          if (list && list.error) {
-            alert('エラー: ' + list.error);
-            hideLoader();
-            return;
-          }
-          if (!list || list.length === 0) {
-            fileSelect.innerHTML = '<option>ファイルなし</option>';
-            hideLoader();
-            return;
-          }
-          fileSelect.innerHTML = '';
-          list.forEach(function (file) {
-            var option = document.createElement('option');
-            option.value = file.id;
-            option.text = file.name;
-            fileSelect.appendChild(option);
-          });
-          loadSelectedFile(false, false, true);
-        })
-        .catch(function (err) {
-          alert(err && err.message ? err.message : '一覧の取得に失敗しました');
-          hideLoader();
-        });
     }
 
     function onFileDropdownChanged() {
@@ -1375,6 +1916,8 @@
         return;
       }
 
+      nnPrepareSlotForIncomingLoad_();
+
       var baseName = fileName.replace(/\.[^/.]+$/, '');
       var ext = fileName.split('.').pop().toLowerCase();
       fileType = ext === 'jpg' || ext === 'jpeg' || ext === 'png' ? 'image' : 'pdf';
@@ -1427,6 +1970,10 @@
               hideLoader();
               updateFavoriteButtonStatus();
               nnRefreshCollaborationToolbar();
+              nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+              nnUpdatePdfSlotTabStyles();
+              nnShowPdfSlotTabs(true);
+              nnWirePdfSlotTabsOnce();
             } catch (err) {
               console.error(err);
               alert('読み込み失敗: ' + err.message);
@@ -1472,6 +2019,7 @@
         alert('PDFデータがありません。');
         return;
       }
+      nnPrepareSlotForIncomingLoad_();
       currentFileId = id;
       fileName = name || 'document.pdf';
       legacyFolderNavActive = false;
@@ -1499,7 +2047,7 @@
           viewerContainer.scrollLeft = 0;
           viewerContainer.scrollTop = 0;
           homeScreen.style.display = 'none';
-          viewerContainer.style.display = 'block';
+          viewerContainer.style.display = 'flex';
           var nnPanel = document.getElementById('nn-panel');
           if (nnPanel) nnPanel.style.display = 'none';
           var pdfBtn = document.getElementById('btn-mode-pdf');
@@ -1512,6 +2060,10 @@
           hideLoader();
           updateFavoriteButtonStatus();
           nnRefreshCollaborationToolbar();
+          nnSnapshotGlobalsToSlot(nnActivePdfSlot);
+          nnUpdatePdfSlotTabStyles();
+          nnShowPdfSlotTabs(true);
+          nnWirePdfSlotTabsOnce();
         } catch (err) {
           console.error(err);
           alert('読み込み失敗: ' + err.message);
@@ -1597,6 +2149,16 @@
     }
 
     async function renderPage(pageNum) {
+      if (fileType === 'pdf' && !pdfDocJs) {
+        statusDiv.textContent = '（このタブに PDF がありません）';
+        if (pageIndicator) pageIndicator.textContent = '0/0';
+        return;
+      }
+      if (fileType !== 'pdf' && !currentImageObj) {
+        statusDiv.textContent = '（このタブに画像がありません）';
+        if (pageIndicator) pageIndicator.textContent = '0/0';
+        return;
+      }
       statusDiv.textContent = 'レンダリング中...';
       if (!sharedStrokesByPage[pageNum]) sharedStrokesByPage[pageNum] = [];
       if (!localStrokesByPage[pageNum]) localStrokesByPage[pageNum] = [];
@@ -1939,7 +2501,7 @@
         if (homeScreen && homeScreen.style.display === 'flex') {
           viewer.style.display = 'none';
         } else {
-          viewer.style.display = 'block';
+          viewer.style.display = 'flex';
           if (currentFileId) nnRefreshCollaborationToolbar();
         }
       }
@@ -1955,13 +2517,17 @@
         meta: 'key'
       });
 
+      let nnDragTaskSubgroupEl = null;
+      let nnDragChecklistUlEl = null;
+      let nnDragTaskId = null;
+      let nnDragCiTaskId = null;
+      let nnDragCiFIdx = null;
+
       function nnIsGas() {
         if (typeof google !== 'undefined' && google.script && google.script.run) return true;
-        var web = typeof window.NN_GAS_WEB_APP_URL === 'string' ? window.NN_GAS_WEB_APP_URL.trim() : '';
-        if (web) return true;
-        var sid = typeof window.NN_SCRIPT_ID === 'string' ? window.NN_SCRIPT_ID.trim() : '';
-        var cid = typeof window.NN_GOOGLE_CLIENT_ID === 'string' ? window.NN_GOOGLE_CLIENT_ID.trim() : '';
-        return !!(sid && cid);
+        var u = typeof window.NN_GAS_EXEC_URL === 'string' ? window.NN_GAS_EXEC_URL.trim() : '';
+        var tok = typeof window.NN_GAS_API_TOKEN === 'string' ? window.NN_GAS_API_TOKEN.trim() : '';
+        return !!(u && tok);
       }
 
       function nnUuid() {
@@ -2002,46 +2568,210 @@
         return y + '-' + m + '-' + day;
       }
 
-      function nnAdvanceRepeatDue(ymd, rule) {
+      function nnYmdToDate(ymd) {
         const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
-        const base = m
-          ? new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
-          : new Date();
-        switch (rule) {
-          case 'daily':
-            base.setDate(base.getDate() + 1);
-            break;
-          case 'weekly':
-            base.setDate(base.getDate() + 7);
-            break;
-          case 'monthly':
-            base.setMonth(base.getMonth() + 1);
-            break;
-          case 'yearly':
-            base.setFullYear(base.getFullYear() + 1);
-            break;
-          default:
-            return ymd || nnTodayYmd();
-        }
-        const y = base.getFullYear();
-        const mo = String(base.getMonth() + 1).padStart(2, '0');
-        const day = String(base.getDate()).padStart(2, '0');
+        if (!m) return null;
+        const d = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+        if (isNaN(d.getTime())) return null;
+        return d;
+      }
+
+      function nnDateToYmd(d) {
+        const y = d.getFullYear();
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
         return y + '-' + mo + '-' + day;
       }
 
-      function nnRepeatRuleLabel(rule) {
-        switch (rule) {
-          case 'daily':
-            return '毎日';
-          case 'weekly':
-            return '毎週';
-          case 'monthly':
-            return '毎月';
-          case 'yearly':
-            return '毎年';
-          default:
-            return '';
+      function nnAddDaysYmd(ymd, delta) {
+        const d = nnYmdToDate(ymd);
+        if (!d) return nnTodayYmd();
+        d.setDate(d.getDate() + delta);
+        return nnDateToYmd(d);
+      }
+
+      function nnJsGetDayToMon1Sun7(dt) {
+        const j = dt.getDay();
+        return j === 0 ? 7 : j;
+      }
+
+      function nnDaysBetweenYmd_(fromYmd, toYmd) {
+        const a = nnYmdToDate(fromYmd);
+        const b = nnYmdToDate(toYmd);
+        if (!a || !b) return 0;
+        return Math.round((b.getTime() - a.getTime()) / 86400000);
+      }
+
+      function nnVisibleStartYmd(dueYmd, leadDays) {
+        if (!dueYmd || leadDays == null || leadDays === '') return null;
+        const n = typeof leadDays === 'number' ? leadDays : parseInt(String(leadDays).trim(), 10);
+        if (isNaN(n) || n < 0) return null;
+        return nnAddDaysYmd(dueYmd, -n);
+      }
+
+      function nnIsTaskLeadStaged_(t) {
+        if (!t || t.status !== 'active') return false;
+        const vs = nnVisibleStartYmd(t.dueDate, t.visibleLeadDays);
+        if (!vs) return false;
+        return nnTodayYmd() < vs;
+      }
+
+      function nnNthWeekdayInMonth_(y, month0, nth, dowMon1) {
+        const hits = [];
+        let day;
+        for (day = 1; day <= 31; day++) {
+          const dt = new Date(y, month0, day);
+          if (dt.getMonth() !== month0) break;
+          if (nnJsGetDayToMon1Sun7(dt) === dowMon1) hits.push(dt);
         }
+        if (!hits.length) return null;
+        if (nth === -1) return hits[hits.length - 1];
+        return hits[nth - 1] || null;
+      }
+
+      function nnAdvanceWeeklyByDay_(ymd, dowArr) {
+        const set = {};
+        let i;
+        for (i = 0; i < dowArr.length; i++) set[dowArr[i]] = true;
+        if (!dowArr.length) return ymd || nnTodayYmd();
+        let cur = nnAddDaysYmd(ymd, 1);
+        for (i = 0; i < 400; i++) {
+          const d = nnYmdToDate(cur);
+          if (d && set[nnJsGetDayToMon1Sun7(d)]) return cur;
+          cur = nnAddDaysYmd(cur, 1);
+        }
+        return ymd || nnTodayYmd();
+      }
+
+      function nnAdvanceMonthlyDom_(ymd, dom) {
+        let cur = nnAddDaysYmd(ymd, 1);
+        let i;
+        for (i = 0; i < 400; i++) {
+          const d = nnYmdToDate(cur);
+          if (d && d.getDate() === dom) return cur;
+          cur = nnAddDaysYmd(cur, 1);
+        }
+        return ymd || nnTodayYmd();
+      }
+
+      function nnAdvanceMonthlyNth_(ymd, nth, dowMon1) {
+        let cur = nnAddDaysYmd(ymd, 1);
+        let i;
+        for (i = 0; i < 800; i++) {
+          const d = nnYmdToDate(cur);
+          if (!d) break;
+          const hit = nnNthWeekdayInMonth_(d.getFullYear(), d.getMonth(), nth, dowMon1);
+          if (hit && nnDateToYmd(hit) === cur) return cur;
+          cur = nnAddDaysYmd(cur, 1);
+        }
+        return ymd || nnTodayYmd();
+      }
+
+      function nnAdvanceRepeatDue(ymd, ruleStr) {
+        const norm = nnNormalizeRepeatRule(ruleStr);
+        if (!norm) return ymd || nnTodayYmd();
+        if (norm.charAt(0) !== '{') {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+          const base = m
+            ? new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
+            : new Date();
+          switch (norm) {
+            case 'daily':
+              base.setDate(base.getDate() + 1);
+              break;
+            case 'weekly':
+              base.setDate(base.getDate() + 7);
+              break;
+            case 'monthly':
+              base.setMonth(base.getMonth() + 1);
+              break;
+            case 'yearly':
+              base.setFullYear(base.getFullYear() + 1);
+              break;
+            default:
+              return ymd || nnTodayYmd();
+          }
+          return nnDateToYmd(base);
+        }
+        let o;
+        try {
+          o = JSON.parse(norm);
+        } catch (e) {
+          return ymd || nnTodayYmd();
+        }
+        if (!o || typeof o.k !== 'string') return ymd || nnTodayYmd();
+        switch (o.k) {
+          case 'daily':
+            return nnAddDaysYmd(ymd, 1);
+          case 'yearly': {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+            const base = m
+              ? new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
+              : new Date();
+            base.setFullYear(base.getFullYear() + 1);
+            return nnDateToYmd(base);
+          }
+          case 'weeklyByDay':
+            return nnAdvanceWeeklyByDay_(ymd, o.dow || []);
+          case 'monthlyDom':
+            return nnAdvanceMonthlyDom_(ymd, parseInt(o.dom, 10) || 1);
+          case 'monthlyNth':
+            return nnAdvanceMonthlyNth_(ymd, parseInt(o.nth, 10) || 1, parseInt(o.dow, 10) || 1);
+          case 'weekly':
+            return nnAdvanceWeeklyByDay_(ymd, [nnJsGetDayToMon1Sun7(nnYmdToDate(ymd) || new Date())]);
+          case 'monthly': {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+            const base = m
+              ? new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10))
+              : new Date();
+            base.setMonth(base.getMonth() + 1);
+            return nnDateToYmd(base);
+          }
+          default:
+            return ymd || nnTodayYmd();
+        }
+      }
+
+      function nnRepeatRuleLabel(ruleStr) {
+        const norm = nnNormalizeRepeatRule(ruleStr);
+        if (!norm) return '';
+        if (norm.charAt(0) !== '{') {
+          switch (norm) {
+            case 'daily':
+              return '毎日';
+            case 'weekly':
+              return '毎週';
+            case 'monthly':
+              return '毎月';
+            case 'yearly':
+              return '毎年';
+            default:
+              return '';
+          }
+        }
+        let o;
+        try {
+          o = JSON.parse(norm);
+        } catch (e) {
+          return '';
+        }
+        if (!o || typeof o.k !== 'string') return '';
+        if (o.k === 'weeklyByDay' && Array.isArray(o.dow)) {
+          const wd = ['', '月', '火', '水', '木', '金', '土', '日'];
+          const parts = o.dow.map(function (d) {
+            return wd[d] || d;
+          });
+          return '毎週·' + parts.join('・') + '曜';
+        }
+        if (o.k === 'monthlyDom') return '毎月·' + o.dom + '日';
+        if (o.k === 'monthlyNth') {
+          const nth = o.nth === -1 ? '最終' : String(o.nth);
+          const wd = ['', '月', '火', '水', '木', '金', '土', '日'];
+          return '毎月·第' + nth + (wd[o.dow] || '') + '曜日';
+        }
+        if (o.k === 'daily') return '毎日';
+        if (o.k === 'yearly') return '毎年';
+        return o.k;
       }
 
       var NN_BUCKET_RANK = { today: 0, scheduled: 1, anytime: 2, past: 3 };
@@ -2074,7 +2804,52 @@
         const s = v == null ? '' : String(v).trim();
         if (!s || s === 'none') return '';
         if (['daily', 'weekly', 'monthly', 'yearly'].indexOf(s) >= 0) return s;
+        if (s.charAt(0) === '{') {
+          try {
+            const o = JSON.parse(s);
+            if (!o || typeof o.k !== 'string') return '';
+            const k = o.k;
+            if (k === 'daily' || k === 'yearly') return JSON.stringify({ k: k });
+            if (k === 'weeklyByDay') {
+              const dow = Array.isArray(o.dow)
+                ? o.dow
+                    .map(function (x) {
+                      return parseInt(x, 10);
+                    })
+                    .filter(function (x) {
+                      return x >= 1 && x <= 7;
+                    })
+                : [];
+              if (!dow.length) return '';
+              dow.sort(function (a, b) {
+                return a - b;
+              });
+              return JSON.stringify({ k: 'weeklyByDay', dow: dow });
+            }
+            if (k === 'monthlyDom') {
+              const dom = parseInt(o.dom, 10);
+              if (isNaN(dom) || dom < 1 || dom > 31) return '';
+              return JSON.stringify({ k: 'monthlyDom', dom: dom });
+            }
+            if (k === 'monthlyNth') {
+              const nth = parseInt(o.nth, 10);
+              const dow = parseInt(o.dow, 10);
+              if ([1, 2, 3, 4, -1].indexOf(nth) < 0 || isNaN(dow) || dow < 1 || dow > 7) return '';
+              return JSON.stringify({ k: 'monthlyNth', nth: nth, dow: dow });
+            }
+            return '';
+          } catch (e) {
+            return '';
+          }
+        }
         return '';
+      }
+
+      function nnNormalizeVisibleLeadDays(v) {
+        if (v === null || v === undefined || v === '') return null;
+        const n = typeof v === 'number' ? v : parseInt(String(v).trim(), 10);
+        if (isNaN(n) || n < 0) return null;
+        return n;
       }
 
       function nnNormalizeTask(t) {
@@ -2095,7 +2870,8 @@
           completedAt: x.completedAt == null || x.completedAt === '' ? null : String(x.completedAt),
           googleTaskId: x.googleTaskId != null ? String(x.googleTaskId) : '',
           calendarEventId: x.calendarEventId != null ? String(x.calendarEventId) : '',
-          repeatRule: nnNormalizeRepeatRule(x.repeatRule)
+          repeatRule: nnNormalizeRepeatRule(x.repeatRule),
+          visibleLeadDays: nnNormalizeVisibleLeadDays(x.visibleLeadDays)
         };
       }
 
@@ -2293,6 +3069,200 @@
         await nnUpdateSyncBadge();
       };
 
+      function nnDndZoneThirds_(ev, rowEl) {
+        const r = rowEl.getBoundingClientRect();
+        const y = ev.clientY - r.top;
+        const h = r.height || 1;
+        if (y < h * 0.25) return 'before';
+        if (y > h * 0.75) return 'after';
+        return 'inside';
+      }
+
+      async function nnReorderTasksInSubgroup_(subgroupEl, dragId, targetId, zone) {
+        const cards = Array.from(subgroupEl.querySelectorAll('.nn-task-card[data-task-id]'));
+        const ids = cards.map(function (c) {
+          return c.getAttribute('data-task-id');
+        });
+        const dragIdx = ids.indexOf(dragId);
+        const tgtIdx = ids.indexOf(targetId);
+        if (dragIdx < 0 || tgtIdx < 0 || dragId === targetId) return;
+        const without = ids.filter(function (id) {
+          return id !== dragId;
+        });
+        let tgtInArr = tgtIdx;
+        if (dragIdx < tgtIdx) tgtInArr = tgtIdx - 1;
+        let insertAt = zone === 'before' ? tgtInArr : tgtInArr + 1;
+        const newOrder = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+        const base = 1024;
+        const step = 256;
+        let i;
+        for (i = 0; i < newOrder.length; i++) {
+          const task = await nnDb.tasks.get(newOrder[i]);
+          if (!task) continue;
+          const norm = nnNormalizeTask(task);
+          norm.sortOrder = base + i * step;
+          await nnDb.tasks.put(norm);
+          await nnQueueOp({ type: 'upsert', task: norm });
+        }
+        await nnRecomputeFpFromDb();
+        await nnRenderTaskList();
+      }
+
+      async function nnReorderCheckItemsFiltered_(taskId, dragFIdx, tgtFIdx, zone) {
+        const row = await nnDb.tasks.get(taskId);
+        if (!row) return;
+        const next = nnNormalizeTask(row);
+        const all = nnNormalizeCheckItems(next.checkItems);
+        const withText = all.filter(function (ci) {
+          return (ci.text || '').trim();
+        });
+        if (
+          dragFIdx < 0 ||
+          tgtFIdx < 0 ||
+          dragFIdx >= withText.length ||
+          tgtFIdx >= withText.length ||
+          dragFIdx === tgtFIdx
+        )
+          return;
+        const dragObj = withText[dragFIdx];
+        const arr = withText.filter(function (_, i) {
+          return i !== dragFIdx;
+        });
+        let tgtInArr = tgtFIdx;
+        if (dragFIdx < tgtFIdx) tgtInArr = tgtFIdx - 1;
+        const insertAt = zone === 'before' ? tgtInArr : tgtInArr + 1;
+        arr.splice(insertAt, 0, dragObj);
+        const noText = all.filter(function (ci) {
+          return !(ci.text || '').trim();
+        });
+        next.checkItems = arr.concat(noText);
+        nnEnsureCheckItemIds(next);
+        await nnDb.tasks.put(next);
+        await nnQueueOp({ type: 'upsert', task: next });
+        await nnRecomputeFpFromDb();
+        await nnRenderTaskList();
+      }
+
+      function nnWireChecklistPreviewDnD_(ul, taskId) {
+        ul.querySelectorAll('li.nn-ci-dnd').forEach(function (li) {
+          li.addEventListener('dragstart', function (ev) {
+            if (ev.target.closest && ev.target.closest('input[type="checkbox"]')) {
+              ev.preventDefault();
+              return;
+            }
+            nnDragChecklistUlEl = ul;
+            nnDragCiTaskId = taskId;
+            nnDragCiFIdx = parseInt(li.getAttribute('data-ci-idx'), 10);
+            ev.dataTransfer.setData(
+              'text/plain',
+              JSON.stringify({ k: 'nn-ci', taskId: taskId, fIdx: nnDragCiFIdx })
+            );
+            ev.dataTransfer.effectAllowed = 'move';
+            li.classList.add('dragging');
+          });
+          li.addEventListener('dragend', function () {
+            li.classList.remove('dragging');
+            ul.querySelectorAll('li.nn-ci-dnd').forEach(function (x) {
+              x.classList.remove('drag-over');
+            });
+            nnDragChecklistUlEl = null;
+            nnDragCiTaskId = null;
+            nnDragCiFIdx = null;
+          });
+          li.addEventListener('dragover', function (ev) {
+            ev.preventDefault();
+            if (nnDragChecklistUlEl !== ul || nnDragCiTaskId !== taskId) return;
+            if (nnDragCiFIdx === null || isNaN(nnDragCiFIdx)) return;
+            li.classList.add('drag-over');
+          });
+          li.addEventListener('dragleave', function () {
+            li.classList.remove('drag-over');
+          });
+          li.addEventListener('drop', function (ev) {
+            ev.preventDefault();
+            li.classList.remove('drag-over');
+            let raw = ev.dataTransfer.getData('text/plain');
+            let payload = null;
+            try {
+              payload = JSON.parse(raw);
+            } catch (e2) {
+              return;
+            }
+            if (!payload || payload.k !== 'nn-ci' || payload.taskId !== taskId) return;
+            if (nnDragChecklistUlEl !== ul) return;
+            const tgtF = parseInt(li.getAttribute('data-ci-idx'), 10);
+            let dragF = payload.fIdx;
+            if (dragF === undefined || dragF === null || isNaN(parseInt(dragF, 10))) dragF = nnDragCiFIdx;
+            dragF = parseInt(dragF, 10);
+            if (isNaN(tgtF) || isNaN(dragF)) return;
+            let zone = nnDndZoneThirds_(ev, li);
+            if (zone === 'inside') zone = 'before';
+            nnReorderCheckItemsFiltered_(taskId, dragF, tgtF, zone).catch(function (err) {
+              console.error(err);
+              alert(err && err.message ? err.message : String(err));
+            });
+          });
+        });
+      }
+
+      function nnWireTaskCardDnD_(card, taskId, subgroupEl) {
+        card.setAttribute('data-task-id', taskId);
+        card.classList.add('nn-task-dnd-source');
+        card.setAttribute('draggable', 'true');
+        card.addEventListener('dragstart', function (ev) {
+          if (
+            ev.target.closest &&
+            ev.target.closest(
+              'button, .nn-task-actions, [data-nn-check], .nn-checklist-preview, .nn-checklist-preview input'
+            )
+          ) {
+            ev.preventDefault();
+            return;
+          }
+          nnDragTaskSubgroupEl = subgroupEl;
+          nnDragTaskId = taskId;
+          ev.dataTransfer.setData('text/plain', JSON.stringify({ k: 'nn-task', id: taskId }));
+          ev.dataTransfer.effectAllowed = 'move';
+        });
+        card.addEventListener('dragend', function () {
+          subgroupEl.querySelectorAll('.nn-task-card').forEach(function (c) {
+            c.classList.remove('drag-over');
+          });
+          nnDragTaskSubgroupEl = null;
+          nnDragTaskId = null;
+        });
+        card.addEventListener('dragover', function (ev) {
+          ev.preventDefault();
+          if (!nnDragTaskId || nnDragTaskSubgroupEl !== subgroupEl) return;
+          if (nnDragTaskId === taskId) return;
+          card.classList.add('drag-over');
+        });
+        card.addEventListener('dragleave', function () {
+          card.classList.remove('drag-over');
+        });
+        card.addEventListener('drop', function (ev) {
+          ev.preventDefault();
+          card.classList.remove('drag-over');
+          let payload = null;
+          try {
+            payload = JSON.parse(ev.dataTransfer.getData('text/plain'));
+          } catch (e5) {
+            return;
+          }
+          if (!payload || payload.k !== 'nn-task') return;
+          if (nnDragTaskSubgroupEl !== subgroupEl) return;
+          const dragId = payload.id;
+          const targetId = taskId;
+          if (dragId === targetId) return;
+          let zone = nnDndZoneThirds_(ev, card);
+          if (zone === 'inside') zone = 'before';
+          nnReorderTasksInSubgroup_(subgroupEl, dragId, targetId, zone).catch(function (err) {
+            console.error(err);
+            alert(err && err.message ? err.message : String(err));
+          });
+        });
+      }
+
       async function nnRecomputeFpFromDb() {
         const all = await nnDb.tasks.toArray();
         window.nnFpAtLastRender = nnFingerprintTasks(all);
@@ -2301,7 +3271,19 @@
       async function nnRenderTaskList() {
         const host = document.getElementById('nn-task-list');
         if (!host) return;
-        const list = await nnDb.tasks.toArray();
+        const rawList = await nnDb.tasks.toArray();
+        const staged = [];
+        const list = [];
+        rawList.forEach(function (t) {
+          if (nnIsTaskLeadStaged_(t)) staged.push(t);
+          else list.push(t);
+        });
+        staged.sort(function (a, b) {
+          const va = nnVisibleStartYmd(a.dueDate, a.visibleLeadDays) || '';
+          const vb = nnVisibleStartYmd(b.dueDate, b.visibleLeadDays) || '';
+          if (va !== vb) return va.localeCompare(vb);
+          return (a.title || '').localeCompare(b.title || '');
+        });
         list.sort(function (a, b) {
           const ba = NN_BUCKET_RANK[nnStartBucket(a)];
           const bb = NN_BUCKET_RANK[nnStartBucket(b)];
@@ -2312,11 +3294,154 @@
           if (gh !== 0) return gh;
           return (a.sortOrder || 0) - (b.sortOrder || 0);
         });
+
+        function appendTaskCard(t, isStaged, parentEl) {
+          const card = document.createElement('div');
+          card.className = 'nn-task-card' + (t.status !== 'active' ? ' done' : '');
+          if (isStaged) card.style.opacity = '0.92';
+          card.title =
+            'タイトル・メタ情報あたりをつかんでドラッグすると、このグループ内で並べ替えられます（ボタン・完了チェック・サブ項目以外）。';
+          const done = t.status === 'completed' || t.status === 'canceled';
+          const canceled = t.status === 'canceled';
+          card.innerHTML =
+            '<input type="checkbox" data-nn-check ' +
+            (done ? 'checked ' : '') +
+            (canceled ? 'disabled ' : '') +
+            'aria-label="' +
+            (canceled ? 'キャンセル済み（一覧では変更できません）' : '完了') +
+            '">' +
+            '<div class="nn-task-body">' +
+            '<div class="nn-task-title"></div>' +
+            '<div class="nn-task-meta"></div></div>' +
+            '<div class="nn-task-actions">' +
+            '<button type="button" data-nn-edit>編集</button>' +
+            '<button type="button" class="nn-del" data-nn-del>削除</button></div>';
+          card.querySelector('.nn-task-title').textContent = t.title || '(無題)';
+          const whenPart = t.startDate ? '開始 ' + t.startDate : 'いつでも';
+          const duePart = t.dueDate ? '期限 ' + t.dueDate : '期限なし';
+          const rr = nnNormalizeRepeatRule(t.repeatRule);
+          const repPart = rr ? ' · 繰返:' + nnRepeatRuleLabel(rr) : '';
+          let visPart = '';
+          const vs = nnVisibleStartYmd(t.dueDate, t.visibleLeadDays);
+          if (vs) {
+            const today = nnTodayYmd();
+            if (isStaged) {
+              const left = nnDaysBetweenYmd_(today, vs);
+              visPart = ' · 表示開始 ' + vs + '（あと' + left + '日）';
+            } else {
+              visPart = ' · 表示開始済 ' + vs;
+            }
+          }
+          card.querySelector('.nn-task-meta').textContent =
+            whenPart + ' · ' + duePart + repPart + visPart + ' · ' + (t.status || 'active');
+          const body = card.querySelector('.nn-task-body');
+          const itemsRaw = nnNormalizeCheckItems(t.checkItems).filter(function (ci) {
+            return (ci.text || '').trim();
+          });
+          if (itemsRaw.length) {
+            const doneN = itemsRaw.filter(function (ci) {
+              return ci.isDone;
+            }).length;
+            const prog = document.createElement('div');
+            prog.className = 'nn-check-progress';
+            prog.textContent =
+              'チェック ' + doneN + '/' + itemsRaw.length + '（行をドラッグで並べ替え・チェックボックスはクリックのみ）';
+            body.appendChild(prog);
+            const ul = document.createElement('ul');
+            ul.className = 'nn-checklist-preview';
+            itemsRaw.forEach(function (ci, idx) {
+              const li = document.createElement('li');
+              li.className = 'nn-ci-dnd';
+              li.setAttribute('draggable', 'true');
+              li.setAttribute('data-ci-idx', String(idx));
+              li.title = 'チェック以外の行をドラッグすると順序を変えられます';
+              const label = document.createElement('label');
+              const inp = document.createElement('input');
+              inp.type = 'checkbox';
+              inp.checked = !!ci.isDone;
+              const span = document.createElement('span');
+              span.className = 'nn-ci-text' + (ci.isDone ? ' done' : '');
+              let line = ci.text || '';
+              if ((ci.dueDate || '').trim()) line += '（期限 ' + ci.dueDate + '）';
+              span.textContent = line;
+              inp.addEventListener('click', function (e) {
+                e.stopPropagation();
+              });
+              inp.addEventListener('change', function () {
+                nnToggleCheckItem(t.id, inp.checked, idx);
+              });
+              label.appendChild(inp);
+              label.appendChild(span);
+              li.appendChild(label);
+              ul.appendChild(li);
+            });
+            body.appendChild(ul);
+            nnWireChecklistPreviewDnD_(ul, t.id);
+          }
+          const chk = card.querySelector('[data-nn-check]');
+          chk.addEventListener('change', function () {
+            nnToggleDone(t.id, chk.checked);
+          });
+          card.querySelector('[data-nn-edit]').addEventListener('click', function () {
+            nnOpenEditor(t.id);
+          });
+          card.querySelector('[data-nn-del]').addEventListener('click', function () {
+            nnDeleteTask(t.id);
+          });
+          parentEl.appendChild(card);
+          nnWireTaskCardDnD_(card, t.id, parentEl);
+        }
+
+        host.innerHTML = '';
+        if (staged.length) {
+          const sh = document.createElement('div');
+          sh.className = 'nn-bucket-title';
+          sh.textContent = '投入待ち（一覧表示開始前）';
+          host.appendChild(sh);
+          const sub = document.createElement('div');
+          sub.className = 'nn-group-title';
+          sub.textContent = '期限の N 日前より、上のバケットへ移ります';
+          host.appendChild(sub);
+          const stagedWrap = document.createElement('div');
+          stagedWrap.className = 'nn-task-subgroup-items nn-task-staged-items';
+          host.appendChild(stagedWrap);
+          staged.forEach(function (t) {
+            appendTaskCard(t, true, stagedWrap);
+          });
+        }
+
+        const upcoming = [];
+        let u;
+        for (u = 0; u < list.length; u++) {
+          const t = list[u];
+          const vs = nnVisibleStartYmd(t.dueDate, t.visibleLeadDays);
+          if (!vs) continue;
+          const left = nnDaysBetweenYmd_(nnTodayYmd(), vs);
+          if (left > 0 && left <= 7) upcoming.push({ t: t, vs: vs, left: left });
+        }
+        upcoming.sort(function (a, b) {
+          return a.vs.localeCompare(b.vs);
+        });
+        if (upcoming.length) {
+          const uh = document.createElement('div');
+          uh.className = 'nn-bucket-title';
+          uh.textContent = '近日表示開始（7日以内）';
+          host.appendChild(uh);
+          upcoming.forEach(function (x) {
+            const row = document.createElement('div');
+            row.style.cssText = 'font-size:12px;color:#174ea6;margin:4px 0 8px 14px;';
+            row.textContent =
+              '「' + (x.t.title || '') + '」→ 表示開始 ' + x.vs + '（あと' + x.left + '日）';
+            host.appendChild(row);
+          });
+        }
+
         const structure = [];
         list.forEach(function (t) {
           const b = nnStartBucket(t);
           let bg = null;
-          for (let i = 0; i < structure.length; i++) {
+          let i;
+          for (i = 0; i < structure.length; i++) {
             if (structure[i].bucket === b) {
               bg = structure[i];
               break;
@@ -2328,7 +3453,8 @@
           }
           const subKey = (t.project || '（プロジェクトなし）') + ' / ' + (t.heading || '（見出しなし）');
           let sg = null;
-          for (let j = 0; j < bg.subgroups.length; j++) {
+          let j;
+          for (j = 0; j < bg.subgroups.length; j++) {
             if (bg.subgroups[j].key === subKey) {
               sg = bg.subgroups[j];
               break;
@@ -2340,11 +3466,12 @@
           }
           sg.items.push(t);
         });
-        host.innerHTML = '';
-        if (structure.length === 0) {
+
+        if (structure.length === 0 && staged.length === 0) {
           host.innerHTML = '<p style="color:#5f6368;">タスクがありません。「新規タスク」で追加するか、オンラインでサーバーから取り込んでください。</p>';
           return;
         }
+
         structure.forEach(function (bucketGroup) {
           const bh = document.createElement('div');
           bh.className = 'nn-bucket-title';
@@ -2355,79 +3482,11 @@
             th.className = 'nn-group-title';
             th.textContent = sg.key;
             host.appendChild(th);
+            const itemHost = document.createElement('div');
+            itemHost.className = 'nn-task-subgroup-items';
+            host.appendChild(itemHost);
             sg.items.forEach(function (t) {
-              const card = document.createElement('div');
-              card.className = 'nn-task-card' + (t.status !== 'active' ? ' done' : '');
-              const done = t.status === 'completed' || t.status === 'canceled';
-              const canceled = t.status === 'canceled';
-              card.innerHTML =
-                '<input type="checkbox" data-nn-check ' +
-                (done ? 'checked ' : '') +
-                (canceled ? 'disabled ' : '') +
-                'aria-label="' +
-                (canceled ? 'キャンセル済み（一覧では変更できません）' : '完了') +
-                '">' +
-                '<div class="nn-task-body">' +
-                '<div class="nn-task-title"></div>' +
-                '<div class="nn-task-meta"></div></div>' +
-                '<div class="nn-task-actions">' +
-                '<button type="button" data-nn-edit>編集</button>' +
-                '<button type="button" class="nn-del" data-nn-del>削除</button></div>';
-              card.querySelector('.nn-task-title').textContent = t.title || '(無題)';
-              const whenPart = t.startDate ? '開始 ' + t.startDate : 'いつでも';
-              const duePart = t.dueDate ? '期限 ' + t.dueDate : '期限なし';
-              const rr = nnNormalizeRepeatRule(t.repeatRule);
-              const repPart = rr ? ' · 繰返:' + nnRepeatRuleLabel(rr) : '';
-              card.querySelector('.nn-task-meta').textContent = whenPart + ' · ' + duePart + repPart + ' · ' + (t.status || 'active');
-              const body = card.querySelector('.nn-task-body');
-              const itemsRaw = nnNormalizeCheckItems(t.checkItems).filter(function (ci) {
-                return (ci.text || '').trim();
-              });
-              if (itemsRaw.length) {
-                const doneN = itemsRaw.filter(function (ci) {
-                  return ci.isDone;
-                }).length;
-                const prog = document.createElement('div');
-                prog.className = 'nn-check-progress';
-                prog.textContent = 'チェック ' + doneN + '/' + itemsRaw.length;
-                body.appendChild(prog);
-                const ul = document.createElement('ul');
-                ul.className = 'nn-checklist-preview';
-                itemsRaw.forEach(function (ci, idx) {
-                  const li = document.createElement('li');
-                  const label = document.createElement('label');
-                  const inp = document.createElement('input');
-                  inp.type = 'checkbox';
-                  inp.checked = !!ci.isDone;
-                  const span = document.createElement('span');
-                  span.className = 'nn-ci-text' + (ci.isDone ? ' done' : '');
-                  let line = ci.text || '';
-                  if ((ci.dueDate || '').trim()) line += '（期限 ' + ci.dueDate + '）';
-                  span.textContent = line;
-                  inp.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                  });
-                  inp.addEventListener('change', function () {
-                    nnToggleCheckItem(t.id, inp.checked, idx);
-                  });
-                  label.appendChild(inp);
-                  label.appendChild(span);
-                  li.appendChild(label);
-                  ul.appendChild(li);
-                });
-                body.appendChild(ul);
-              }
-              const chk = card.querySelector('[data-nn-check]');
-              chk.addEventListener('change', function () {
-                nnToggleDone(t.id, chk.checked);
-              });
-              card.querySelector('[data-nn-edit]').addEventListener('click', function () {
-                nnOpenEditor(t.id);
-              });
-              card.querySelector('[data-nn-del]').addEventListener('click', function () {
-                nnDeleteTask(t.id);
-              });
-              host.appendChild(card);
+              appendTaskCard(t, false, itemHost);
             });
           });
         });
@@ -2495,18 +3554,302 @@
 
       let nnEditingId = null;
 
-      window.nnShowNewTaskForm = function nnShowNewTaskForm() {
+      function nnSetDowCheckboxes(dowArr) {
+        const row = document.getElementById('nn-repeat-dow-row');
+        if (!row) return;
+        const set = {};
+        (dowArr || []).forEach(function (d) {
+          set[d] = true;
+        });
+        row.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          cb.checked = !!set[parseInt(cb.value, 10)];
+        });
+      }
+
+      function nnBuildRepeatDowRowOnce() {
+        const row = document.getElementById('nn-repeat-dow-row');
+        if (!row || row.querySelector('input')) return;
+        const labels = ['月', '火', '水', '木', '金', '土', '日'];
+        let d;
+        for (d = 1; d <= 7; d++) {
+          const lab = document.createElement('label');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = String(d);
+          lab.appendChild(cb);
+          lab.appendChild(document.createTextNode(labels[d - 1]));
+          row.appendChild(lab);
+        }
+        row.addEventListener('change', function () {
+          nnUpdateFlagPreview();
+        });
+      }
+
+      function nnRepeatUiOnKindChange() {
+        const k = document.getElementById('nn-f-repeat-kind');
+        const kind = k ? k.value : '';
+        const w = document.getElementById('nn-repeat-weekly-wrap');
+        const md = document.getElementById('nn-repeat-month-dom-wrap');
+        const mn = document.getElementById('nn-repeat-month-nth-wrap');
+        if (w) w.style.display = kind === 'weeklyByDay' ? 'block' : 'none';
+        if (md) md.style.display = kind === 'monthlyDom' ? 'block' : 'none';
+        if (mn) mn.style.display = kind === 'monthlyNth' ? 'block' : 'none';
+        nnUpdateFlagPreview();
+      }
+
+      function nnCollectRepeatRuleFromEditor_() {
+        const kindEl = document.getElementById('nn-f-repeat-kind');
+        const kind = kindEl ? kindEl.value : '';
+        if (!kind) return '';
+        if (kind === 'daily') return nnNormalizeRepeatRule(JSON.stringify({ k: 'daily' }));
+        if (kind === 'yearly') return nnNormalizeRepeatRule(JSON.stringify({ k: 'yearly' }));
+        if (kind === 'monthly') return 'monthly';
+        if (kind === 'weeklyByDay') {
+          const dow = [];
+          document.querySelectorAll('#nn-repeat-dow-row input[type="checkbox"]').forEach(function (cb) {
+            if (cb.checked) dow.push(parseInt(cb.value, 10));
+          });
+          return nnNormalizeRepeatRule(JSON.stringify({ k: 'weeklyByDay', dow: dow }));
+        }
+        if (kind === 'monthlyDom') {
+          const dom = parseInt(document.getElementById('nn-f-repeat-dom').value, 10) || 1;
+          return nnNormalizeRepeatRule(JSON.stringify({ k: 'monthlyDom', dom: Math.min(31, Math.max(1, dom)) }));
+        }
+        if (kind === 'monthlyNth') {
+          const nth = parseInt(document.getElementById('nn-f-repeat-nth').value, 10);
+          const dow = parseInt(document.getElementById('nn-f-repeat-nth-dow').value, 10);
+          return nnNormalizeRepeatRule(JSON.stringify({ k: 'monthlyNth', nth: nth, dow: dow }));
+        }
+        return '';
+      }
+
+      function nnFillRepeatEditorFromRule_(ruleStr) {
+        const kindEl = document.getElementById('nn-f-repeat-kind');
+        if (!kindEl) return;
+        const norm = String(ruleStr || '').trim();
+        if (!norm) {
+          kindEl.value = '';
+          nnSetDowCheckboxes([]);
+          nnRepeatUiOnKindChange();
+          return;
+        }
+        if (norm.charAt(0) !== '{') {
+          if (['daily', 'monthly', 'yearly'].indexOf(norm) >= 0) {
+            kindEl.value = norm;
+          } else if (norm === 'weekly') {
+            kindEl.value = 'weeklyByDay';
+            const dueEl = document.getElementById('nn-f-due');
+            const d = nnYmdToDate(dueEl && dueEl.value ? dueEl.value.trim() : '') || new Date();
+            nnSetDowCheckboxes([nnJsGetDayToMon1Sun7(d)]);
+          } else {
+            kindEl.value = '';
+          }
+          nnRepeatUiOnKindChange();
+          return;
+        }
+        let o;
+        try {
+          o = JSON.parse(norm);
+        } catch (e) {
+          kindEl.value = '';
+          nnRepeatUiOnKindChange();
+          return;
+        }
+        if (!o || typeof o.k !== 'string') {
+          kindEl.value = '';
+          nnRepeatUiOnKindChange();
+          return;
+        }
+        kindEl.value = o.k;
+        if (o.k === 'weeklyByDay' && Array.isArray(o.dow)) nnSetDowCheckboxes(o.dow);
+        else nnSetDowCheckboxes([]);
+        if (o.k === 'monthlyDom') {
+          const el = document.getElementById('nn-f-repeat-dom');
+          if (el) el.value = String(o.dom != null ? o.dom : 1);
+        }
+        if (o.k === 'monthlyNth') {
+          const nEl = document.getElementById('nn-f-repeat-nth');
+          const dEl = document.getElementById('nn-f-repeat-nth-dow');
+          if (nEl) nEl.value = String(o.nth != null ? o.nth : 1);
+          if (dEl) dEl.value = String(o.dow != null ? o.dow : 1);
+        }
+        nnRepeatUiOnKindChange();
+      }
+
+      function nnUpdateFlagPreview() {
+        const prev = document.getElementById('nn-f-repeat-preview');
+        if (!prev) return;
+        const dueEl = document.getElementById('nn-f-due');
+        const leadEl = document.getElementById('nn-f-visible-lead');
+        const due = dueEl ? dueEl.value.trim() : '';
+        const leadRaw = leadEl ? leadEl.value.trim() : '';
+        const parts = [];
+        if (due) {
+          parts.push('期限 ' + due);
+          if (leadRaw !== '') {
+            const n = parseInt(leadRaw, 10);
+            if (!isNaN(n) && n >= 0) {
+              const vs = nnVisibleStartYmd(due, n);
+              if (vs) parts.push('一覧表示開始 ' + vs + '（期限の ' + n + ' 日前）');
+            }
+          }
+        }
+        const rr = nnRepeatRuleLabel(nnCollectRepeatRuleFromEditor_());
+        if (rr) parts.push('繰り返し: ' + rr);
+        prev.textContent = parts.join(' · ');
+      }
+
+      async function nnRefreshProjectHeadingOptions() {
+        const projSel = document.getElementById('nn-f-project-sel');
+        const headSel = document.getElementById('nn-f-heading-sel');
+        if (!projSel || !headSel) return;
+        await nnDb.open();
+        const tasks = await nnDb.tasks.toArray();
+        const ps = {};
+        const hs = {};
+        tasks.forEach(function (t) {
+          const p = (t.project || '').trim();
+          if (p) ps[p] = true;
+          const h = (t.heading || '').trim();
+          if (h) hs[h] = true;
+        });
+        projSel.innerHTML = '';
+        const o0 = document.createElement('option');
+        o0.value = '';
+        o0.textContent = '（未指定→保存時にインボックス）';
+        projSel.appendChild(o0);
+        Object.keys(ps)
+          .sort()
+          .forEach(function (p) {
+            if (p === 'インボックス') return;
+            const o = document.createElement('option');
+            o.value = p;
+            o.textContent = p;
+            projSel.appendChild(o);
+          });
+        const onNew = document.createElement('option');
+        onNew.value = '__new__';
+        onNew.textContent = '＋ 新規作成…';
+        projSel.appendChild(onNew);
+        headSel.innerHTML = '';
+        const h0 = document.createElement('option');
+        h0.value = '';
+        h0.textContent = '（なし）';
+        headSel.appendChild(h0);
+        Object.keys(hs)
+          .sort()
+          .forEach(function (h) {
+            const o = document.createElement('option');
+            o.value = h;
+            o.textContent = h;
+            headSel.appendChild(o);
+          });
+        const hn = document.createElement('option');
+        hn.value = '__new__';
+        hn.textContent = '＋ 新規見出し…';
+        headSel.appendChild(hn);
+      }
+
+      function nnApplyProjectHeadingToSelects_(project, heading) {
+        const projSel = document.getElementById('nn-f-project-sel');
+        const headSel = document.getElementById('nn-f-heading-sel');
+        const projIn = document.getElementById('nn-f-project');
+        const headIn = document.getElementById('nn-f-heading');
+        if (!projSel || !headSel || !projIn || !headIn) return;
+        const p = (project || '').trim();
+        const h = (heading || '').trim();
+        let found = false;
+        let i;
+        for (i = 0; i < projSel.options.length; i++) {
+          if (projSel.options[i].value === p) {
+            found = true;
+            break;
+          }
+        }
+        if (p && found) {
+          projSel.value = p;
+          projIn.value = '';
+        } else if (p) {
+          projSel.value = '__new__';
+          projIn.value = p;
+        } else {
+          projSel.value = '';
+          projIn.value = '';
+        }
+        let hf = false;
+        for (i = 0; i < headSel.options.length; i++) {
+          if (headSel.options[i].value === h) {
+            hf = true;
+            break;
+          }
+        }
+        if (h && hf) {
+          headSel.value = h;
+          headIn.value = '';
+        } else if (h) {
+          headSel.value = '__new__';
+          headIn.value = h;
+        } else {
+          headSel.value = '';
+          headIn.value = '';
+        }
+      }
+
+      function nnBindSectionToggle(btnId, secId) {
+        const btn = document.getElementById(btnId);
+        const sec = document.getElementById(secId);
+        if (!btn || !sec || btn.dataset.nnBound) return;
+        btn.dataset.nnBound = '1';
+        btn.addEventListener('click', function () {
+          const open = sec.style.display !== 'block';
+          sec.style.display = open ? 'block' : 'none';
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+      }
+
+      function nnWireTaskEditorUiOnce_() {
+        if (window.nnTaskEditorUiWired) return;
+        window.nnTaskEditorUiWired = true;
+        nnBuildRepeatDowRowOnce();
+        nnBindSectionToggle('nn-btn-sec-tag', 'nn-sec-tag');
+        nnBindSectionToggle('nn-btn-sec-check', 'nn-sec-checklist');
+        nnBindSectionToggle('nn-btn-sec-flag', 'nn-sec-flag');
+        const rk = document.getElementById('nn-f-repeat-kind');
+        if (rk) rk.addEventListener('change', nnRepeatUiOnKindChange);
+        ['nn-f-due', 'nn-f-visible-lead', 'nn-f-repeat-dom'].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (el) el.addEventListener('input', nnUpdateFlagPreview);
+        });
+        const nSel = document.getElementById('nn-f-repeat-nth');
+        const dSel = document.getElementById('nn-f-repeat-nth-dow');
+        if (nSel) nSel.addEventListener('change', nnUpdateFlagPreview);
+        if (dSel) dSel.addEventListener('change', nnUpdateFlagPreview);
+      }
+
+      window.nnShowNewTaskForm = async function nnShowNewTaskForm() {
         nnEditingId = null;
+        nnWireTaskEditorUiOnce_();
         document.getElementById('nn-f-title').value = '';
         document.getElementById('nn-f-project').value = '';
         document.getElementById('nn-f-heading').value = '';
         document.getElementById('nn-f-start').value = '';
         document.getElementById('nn-f-due').value = '';
-        const rep = document.getElementById('nn-f-repeat');
-        if (rep) rep.value = '';
+        document.getElementById('nn-f-visible-lead').value = '';
         document.getElementById('nn-f-notes').value = '';
         const cr = document.getElementById('nn-checklist-rows');
         if (cr) cr.innerHTML = '';
+        await nnRefreshProjectHeadingOptions();
+        nnApplyProjectHeadingToSelects_('', '');
+        nnFillRepeatEditorFromRule_('');
+        ['nn-sec-tag', 'nn-sec-checklist', 'nn-sec-flag'].forEach(function (id) {
+          const sec = document.getElementById(id);
+          if (sec) sec.style.display = 'none';
+        });
+        ['nn-btn-sec-tag', 'nn-btn-sec-check', 'nn-btn-sec-flag'].forEach(function (id) {
+          const b = document.getElementById(id);
+          if (b) b.setAttribute('aria-expanded', 'false');
+        });
+        nnUpdateFlagPreview();
         document.getElementById('nn-editor').style.display = 'flex';
       };
 
@@ -2516,19 +3859,36 @@
       };
 
       async function nnOpenEditor(id) {
+        nnWireTaskEditorUiOnce_();
         const row = await nnDb.tasks.get(id);
         if (!row) return;
         nnEditingId = id;
         const t = nnNormalizeTask(row);
+        await nnRefreshProjectHeadingOptions();
+        nnApplyProjectHeadingToSelects_(t.project, t.heading);
         document.getElementById('nn-f-title').value = t.title;
-        document.getElementById('nn-f-project').value = t.project;
-        document.getElementById('nn-f-heading').value = t.heading;
         document.getElementById('nn-f-start').value = t.startDate || '';
         document.getElementById('nn-f-due').value = t.dueDate || '';
-        const rep = document.getElementById('nn-f-repeat');
-        if (rep) rep.value = t.repeatRule || '';
+        const vld = t.visibleLeadDays != null ? String(t.visibleLeadDays) : '';
+        document.getElementById('nn-f-visible-lead').value = vld;
         document.getElementById('nn-f-notes').value = t.notes;
+        nnFillRepeatEditorFromRule_(t.repeatRule || '');
         nnFillChecklistEditor(t.checkItems);
+        const hasTag = !!(t.heading && t.heading.trim()) || !!(t.project && t.project.trim() && t.project !== 'インボックス');
+        const hasChk = (t.checkItems || []).some(function (ci) {
+          return (ci.text || '').trim();
+        });
+        const hasFlag = !!(t.startDate || t.dueDate || t.repeatRule || t.visibleLeadDays != null);
+        function showSec(secId, btnId, on) {
+          const sec = document.getElementById(secId);
+          const btn = document.getElementById(btnId);
+          if (sec) sec.style.display = on ? 'block' : 'none';
+          if (btn) btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+        }
+        showSec('nn-sec-tag', 'nn-btn-sec-tag', hasTag);
+        showSec('nn-sec-checklist', 'nn-btn-sec-check', hasChk);
+        showSec('nn-sec-flag', 'nn-btn-sec-flag', hasFlag);
+        nnUpdateFlagPreview();
         document.getElementById('nn-editor').style.display = 'flex';
       }
 
@@ -2538,19 +3898,40 @@
           alert('タイトルは必須です。');
           return;
         }
+        nnWireTaskEditorUiOnce_();
         let base = nnEditingId ? await nnDb.tasks.get(nnEditingId) : null;
         const t = nnNormalizeTask(base || {});
         if (!nnEditingId) t.id = nnUuid();
         else t.id = nnEditingId;
         t.title = title;
-        t.project = document.getElementById('nn-f-project').value.trim();
-        t.heading = document.getElementById('nn-f-heading').value.trim();
+        const projSel = document.getElementById('nn-f-project-sel');
+        const headSel = document.getElementById('nn-f-heading-sel');
+        let project = '';
+        if (projSel && projSel.value === '__new__') {
+          project = document.getElementById('nn-f-project').value.trim();
+        } else if (projSel) {
+          project = (projSel.value || '').trim();
+        }
+        let heading = '';
+        if (headSel && headSel.value === '__new__') {
+          heading = document.getElementById('nn-f-heading').value.trim();
+        } else if (headSel) {
+          heading = (headSel.value || '').trim();
+        }
+        if (!project && !heading) {
+          t.project = 'インボックス';
+          t.heading = '';
+        } else {
+          t.project = project || 'インボックス';
+          t.heading = heading;
+        }
         const startRaw = document.getElementById('nn-f-start').value.trim();
         t.startDate = startRaw === '' ? null : startRaw;
         const dueRaw = document.getElementById('nn-f-due').value.trim();
         t.dueDate = dueRaw === '' ? null : dueRaw;
-        const repEl = document.getElementById('nn-f-repeat');
-        t.repeatRule = repEl ? nnNormalizeRepeatRule(repEl.value) : '';
+        t.repeatRule = nnCollectRepeatRuleFromEditor_();
+        const leadRaw = document.getElementById('nn-f-visible-lead').value.trim();
+        t.visibleLeadDays = leadRaw === '' ? null : nnNormalizeVisibleLeadDays(parseInt(leadRaw, 10));
         t.notes = document.getElementById('nn-f-notes').value;
         t.checkItems = nnCollectCheckItemsFromEditor();
         if (t.status !== 'completed' && t.status !== 'canceled') t.status = 'active';
@@ -2564,7 +3945,7 @@
 
       window.nnPullServerOverwrite = async function nnPullServerOverwrite() {
         if (!nnIsGas()) {
-          alert('この環境ではサーバーへ接続できません。Google の Web アプリで開くか、GitHub Pages で Script ID と Client ID を設定してください。');
+          alert('この環境ではサーバーへ接続できません。Google の Web アプリで開くか、GitHub Pages で exec URL と API トークンを設定してください。');
           return;
         }
         try {
@@ -2627,6 +4008,7 @@
 
       window.nnPhase3Init = async function nnPhase3Init() {
         await nnDb.open();
+        nnWireTaskEditorUiOnce_();
         nnUpdateOnlineBadge();
         await nnRenderTaskList();
         await nnRecomputeFpFromDb();
