@@ -535,110 +535,92 @@
   </div>
 
   <script>
-    /** GitHub Actions がデプロイ時に検索置換注入（開発・clasp は空のまま） */
-    window.NN_GAS_EXEC_URL = 'https://script.google.com/macros/s/AKfycbywSX2M0LDy4hvLs8SS9x7bgmcBtfEyWqi4AyISpZ_eQCxE6f4uzdtDhavPYIRlCGvp/exec';
+    /** scripts.run で呼ぶ Apps Script の Script ID */
+    window.NN_SCRIPT_ID = '1SjKHvJ8uxCmYYfGlvA04eldJZJr7PB1yvPOlFES5c1AQzlwhvWU8Rea8';
     /** Google Cloud OAuth 2.0 クライアント ID（Web） */
     window.NN_GOOGLE_CLIENT_ID = '505252303455-84r495bnnsgiefcrv24ro2qtohlgbk2h.apps.googleusercontent.com';
-    window.NN_GOOGLE_ID_TOKEN = '';
-    window.NN_SESSION_TOKEN = '';
-    window.NN_SESSION_EXPIRES_AT = '';
-    window.__nnGisInitDone = false;
-    var NN_SESSION_STORAGE_KEY = 'nn_pages_session_v1';
+    window.NN_GOOGLE_ACCESS_TOKEN = '';
+    window.NN_GOOGLE_ACCESS_EXPIRES_AT = 0;
+    window.__nnOauthClient = null;
+    var NN_OAUTH_BOOTSTRAP_KEY = 'nn_oauth_bootstrap_until';
+    var NN_OAUTH_BOOTSTRAP_DAYS = 30;
 
-    function nnGasExecUrl() {
-      var u = window.NN_GAS_EXEC_URL;
-      return typeof u === 'string' ? u.trim() : '';
+    function nnScriptId() {
+      var s = window.NN_SCRIPT_ID;
+      return typeof s === 'string' ? s.trim() : '';
     }
     function nnGoogleClientId() {
       var c = window.NN_GOOGLE_CLIENT_ID;
       return typeof c === 'string' ? c.trim() : '';
     }
-    function nnCachedIdToken() {
-      var t = window.NN_GOOGLE_ID_TOKEN;
-      return typeof t === 'string' ? t.trim() : '';
+    function nnOauthScopes() {
+      return [
+        'https://www.googleapis.com/auth/script.projects',
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/tasks'
+      ].join(' ');
     }
-    function nnLoadSessionFromStorage() {
+    function nnOauthBootstrapped() {
       try {
-        var raw = localStorage.getItem(NN_SESSION_STORAGE_KEY);
-        if (!raw) return;
-        var s = JSON.parse(raw);
-        window.NN_SESSION_TOKEN = s && s.token ? String(s.token) : '';
-        window.NN_SESSION_EXPIRES_AT = s && s.expiresAt ? String(s.expiresAt) : '';
-      } catch (e) {}
-    }
-    function nnSaveSessionToStorage(token, expiresAt) {
-      window.NN_SESSION_TOKEN = String(token || '');
-      window.NN_SESSION_EXPIRES_AT = String(expiresAt || '');
-      try {
-        localStorage.setItem(NN_SESSION_STORAGE_KEY, JSON.stringify({ token: window.NN_SESSION_TOKEN, expiresAt: window.NN_SESSION_EXPIRES_AT }));
-      } catch (e) {}
-    }
-    function nnClearSession() {
-      window.NN_SESSION_TOKEN = '';
-      window.NN_SESSION_EXPIRES_AT = '';
-      try { localStorage.removeItem(NN_SESSION_STORAGE_KEY); } catch (e) {}
-    }
-    function nnValidSessionToken() {
-      var tok = typeof window.NN_SESSION_TOKEN === 'string' ? window.NN_SESSION_TOKEN.trim() : '';
-      var exp = typeof window.NN_SESSION_EXPIRES_AT === 'string' ? window.NN_SESSION_EXPIRES_AT.trim() : '';
-      if (!tok || !exp) return '';
-      var t = new Date(exp).getTime();
-      if (!t || isNaN(t) || Date.now() >= t) return '';
-      return tok;
-    }
-    function nnEnsureGoogleIdToken() {
-      var cached = nnCachedIdToken();
-      if (cached) return Promise.resolve(cached);
-      return new Promise(function (resolve, reject) {
-        var cid = nnGoogleClientId();
-        if (!cid) {
-          reject(new Error('NN_GOOGLE_CLIENT_ID が未設定です。'));
-          return;
-        }
-        if (!window.google || !google.accounts || !google.accounts.id) {
-          reject(new Error('Google 認証ライブラリの読み込みに失敗しました。'));
-          return;
-        }
-        try {
-          if (!window.__nnGisInitDone) {
-            google.accounts.id.initialize({
-              client_id: cid,
-              callback: function (resp) {
-                if (resp && resp.credential) {
-                  window.NN_GOOGLE_ID_TOKEN = String(resp.credential);
-                }
-              },
-              auto_select: true
-            });
-            window.__nnGisInitDone = true;
-          }
-          google.accounts.id.prompt(function () {
-            var t = nnCachedIdToken();
-            if (t) resolve(t);
-            else reject(new Error('Google ログインを完了してください。'));
-          });
-        } catch (e) {
-          reject(e instanceof Error ? e : new Error(String(e)));
-        }
-      });
-    }
-    async function nnAuthenticateSession() {
-      var url = nnGasExecUrl();
-      if (!url) throw new Error('GAS の exec URL が index に設定されていません。');
-      var idToken = await nnEnsureGoogleIdToken();
-      var r = await fetch(url, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ idToken: idToken, action: 'nn_authenticate', args: [] })
-      });
-      var text = await r.text();
-      var data = JSON.parse(text || '{}');
-      if (!data || !data.ok || !data.result || !data.result.sessionToken) {
-        throw new Error(data && data.error ? data.error : 'セッション認証に失敗しました。');
+        var t = parseInt(localStorage.getItem(NN_OAUTH_BOOTSTRAP_KEY) || '0', 10);
+        return !isNaN(t) && Date.now() < t;
+      } catch (e) {
+        return false;
       }
-      nnSaveSessionToStorage(data.result.sessionToken, data.result.expiresAt || '');
-      return data.result.sessionToken;
+    }
+    function nnMarkOauthBootstrapped() {
+      try {
+        var until = Date.now() + NN_OAUTH_BOOTSTRAP_DAYS * 24 * 60 * 60 * 1000;
+        localStorage.setItem(NN_OAUTH_BOOTSTRAP_KEY, String(until));
+      } catch (e) {}
+    }
+    function nnEnsureOauthClient() {
+      if (window.__nnOauthClient) return window.__nnOauthClient;
+      var cid = nnGoogleClientId();
+      if (!cid) throw new Error('NN_GOOGLE_CLIENT_ID が未設定です。');
+      if (!window.google || !google.accounts || !google.accounts.oauth2) {
+        throw new Error('Google OAuth ライブラリの読み込みに失敗しました。');
+      }
+      window.__nnOauthClient = google.accounts.oauth2.initTokenClient({
+        client_id: cid,
+        scope: nnOauthScopes(),
+        callback: function () {}
+      });
+      return window.__nnOauthClient;
+    }
+    async function nnEnsureGoogleAccessToken() {
+      if (window.NN_GOOGLE_ACCESS_TOKEN && Date.now() < Number(window.NN_GOOGLE_ACCESS_EXPIRES_AT || 0)) {
+        return window.NN_GOOGLE_ACCESS_TOKEN;
+      }
+      var client = nnEnsureOauthClient();
+      function requestToken(promptMode) {
+        return new Promise(function (resolve, reject) {
+          client.callback = function (resp) {
+            if (resp && resp.access_token) {
+              window.NN_GOOGLE_ACCESS_TOKEN = String(resp.access_token);
+              var expSec = Number(resp.expires_in || 3600);
+              window.NN_GOOGLE_ACCESS_EXPIRES_AT = Date.now() + Math.max(60, expSec - 30) * 1000;
+              resolve(window.NN_GOOGLE_ACCESS_TOKEN);
+              return;
+            }
+            reject(new Error(resp && resp.error ? String(resp.error) : 'OAuth token error'));
+          };
+          try {
+            client.requestAccessToken({ prompt: promptMode });
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      }
+      try {
+        return await requestToken(nnOauthBootstrapped() ? '' : 'consent');
+      } catch (e) {
+        var t = await requestToken('consent');
+        nnMarkOauthBootstrapped();
+        return t;
+      }
     }
     /** google.script.run または Pages 向け POST API */
     async function nnGasCall(action, args) {
@@ -666,42 +648,31 @@
           }
         });
       }
-      var url = nnGasExecUrl();
-      if (!url) {
-        throw new Error('GAS の exec URL が index に設定されていません。');
-      }
-      var sess = nnValidSessionToken();
-      if (!sess) {
-        nnLoadSessionFromStorage();
-        sess = nnValidSessionToken();
-      }
-      if (!sess) {
-        sess = await nnAuthenticateSession();
-      }
-      var r = await fetch(url, {
+      var scriptId = nnScriptId();
+      if (!scriptId) throw new Error('NN_SCRIPT_ID が未設定です。');
+      var token = await nnEnsureGoogleAccessToken();
+      var r = await fetch('https://script.googleapis.com/v1/scripts/' + encodeURIComponent(scriptId) + ':run', {
         method: 'POST',
         credentials: 'omit',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ sessionToken: sess, action: action, args: args })
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        },
+        body: JSON.stringify({
+          function: 'nn_execApi',
+          parameters: [{ action: action, args: args }],
+          devMode: false
+        })
       });
-      var text = await r.text();
-      var data;
-      try {
-        data = JSON.parse(text);
-      } catch (e2) {
-        throw new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200));
+      var data = await r.json();
+      if (!r.ok) {
+        throw new Error((data && data.error && data.error.message) ? data.error.message : ('HTTP ' + r.status));
       }
-      if (!data || !data.ok) {
-        var errMsg = data && data.error ? String(data.error) : 'API error';
-        if (errMsg.indexOf('Session') >= 0 || errMsg.indexOf('session') >= 0 || errMsg.indexOf('Unauthorized') >= 0) {
-          nnClearSession();
-        }
-        throw new Error(errMsg);
+      if (data && data.error && data.error.message) {
+        throw new Error(data.error.message);
       }
-      return data.result;
+      return data && data.response ? data.response.result : null;
     }
-
-    nnLoadSessionFromStorage();
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
@@ -1884,8 +1855,9 @@
 
       function nnIsGas() {
         if (typeof google !== 'undefined' && google.script && google.script.run) return true;
-        var u = typeof window.NN_GAS_EXEC_URL === 'string' ? window.NN_GAS_EXEC_URL.trim() : '';
-        return !!u;
+        var sid = typeof window.NN_SCRIPT_ID === 'string' ? window.NN_SCRIPT_ID.trim() : '';
+        var cid = typeof window.NN_GOOGLE_CLIENT_ID === 'string' ? window.NN_GOOGLE_CLIENT_ID.trim() : '';
+        return !!(sid && cid);
       }
 
       function nnUuid() {
@@ -2488,7 +2460,7 @@
 
       window.nnPullServerOverwrite = async function nnPullServerOverwrite() {
         if (!nnIsGas()) {
-          alert('この環境ではサーバーへ接続できません。Google の Web アプリで開くか、GitHub Pages で exec URL を設定してください。');
+          alert('この環境ではサーバーへ接続できません。Google の Web アプリで開くか、GitHub Pages で Script ID と Client ID を設定してください。');
           return;
         }
         try {

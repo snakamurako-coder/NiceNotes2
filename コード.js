@@ -36,6 +36,15 @@ function nn_pagesAllowedEmails_() {
   return nn_pagesTokenList_(raw).map(function (s) { return s.toLowerCase(); });
 }
 
+function nn_requireAllowlistedUser_() {
+  const allowed = nn_pagesAllowedEmails_();
+  if (!allowed.length) throw new Error('NN_AUTH_ALLOWLIST_EMPTY');
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!email) throw new Error('NN_AUTH_EMAIL_UNAVAILABLE');
+  if (allowed.indexOf(email) < 0) throw new Error('NN_AUTH_FORBIDDEN: ' + email);
+  return email;
+}
+
 /**
  * Google ID token を tokeninfo で検証し、email を返す。
  * @param {string} idToken
@@ -117,6 +126,18 @@ function nn_validateSession_(sessionToken) {
   } catch (e) {
     return { ok: false, error: 'Session parse error' };
   }
+}
+
+/**
+ * Apps Script Execution API (scripts.run) から呼ぶ入口。
+ * @param {{action: string, args?: any[]}} req
+ * @return {*}
+ */
+function nn_execApi(req) {
+  nn_requireAllowlistedUser_();
+  const action = req && req.action ? String(req.action) : '';
+  const args = req && Array.isArray(req.args) ? req.args : [];
+  return nn_pagesApiDispatch_(action, args);
 }
 
 /**
