@@ -541,7 +541,10 @@
     /** Google Cloud OAuth 2.0 クライアント ID（Web） */
     window.NN_GOOGLE_CLIENT_ID = '505252303455-84r495bnnsgiefcrv24ro2qtohlgbk2h.apps.googleusercontent.com';
     window.NN_GOOGLE_ID_TOKEN = '';
+    window.NN_SESSION_TOKEN = '';
+    window.NN_SESSION_EXPIRES_AT = '';
     window.__nnGisInitDone = false;
+    var NN_SESSION_STORAGE_KEY = 'nn_pages_session_v1';
 
     function nnGasExecUrl() {
       var u = window.NN_GAS_EXEC_URL;
@@ -558,6 +561,35 @@
     function nnCachedIdToken() {
       var t = window.NN_GOOGLE_ID_TOKEN;
       return typeof t === 'string' ? t.trim() : '';
+    }
+    function nnLoadSessionFromStorage() {
+      try {
+        var raw = localStorage.getItem(NN_SESSION_STORAGE_KEY);
+        if (!raw) return;
+        var s = JSON.parse(raw);
+        window.NN_SESSION_TOKEN = s && s.token ? String(s.token) : '';
+        window.NN_SESSION_EXPIRES_AT = s && s.expiresAt ? String(s.expiresAt) : '';
+      } catch (e) {}
+    }
+    function nnSaveSessionToStorage(token, expiresAt) {
+      window.NN_SESSION_TOKEN = String(token || '');
+      window.NN_SESSION_EXPIRES_AT = String(expiresAt || '');
+      try {
+        localStorage.setItem(NN_SESSION_STORAGE_KEY, JSON.stringify({ token: window.NN_SESSION_TOKEN, expiresAt: window.NN_SESSION_EXPIRES_AT }));
+      } catch (e) {}
+    }
+    function nnClearSession() {
+      window.NN_SESSION_TOKEN = '';
+      window.NN_SESSION_EXPIRES_AT = '';
+      try { localStorage.removeItem(NN_SESSION_STORAGE_KEY); } catch (e) {}
+    }
+    function nnValidSessionToken() {
+      var tok = typeof window.NN_SESSION_TOKEN === 'string' ? window.NN_SESSION_TOKEN.trim() : '';
+      var exp = typeof window.NN_SESSION_EXPIRES_AT === 'string' ? window.NN_SESSION_EXPIRES_AT.trim() : '';
+      if (!tok || !exp) return '';
+      var t = new Date(exp).getTime();
+      if (!t || isNaN(t) || Date.now() >= t) return '';
+      return tok;
     }
     function nnEnsureGoogleIdToken() {
       var cached = nnCachedIdToken();
@@ -595,6 +627,25 @@
         }
       });
     }
+    async function nnAuthenticateSession() {
+      var url = nnGasExecUrl();
+      var tok = nnGasApiToken();
+      if (!url || !tok) throw new Error('GAS の exec URL と API トークンが index に設定されていません。');
+      var idToken = await nnEnsureGoogleIdToken();
+      var r = await fetch(url, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: tok, idToken: idToken, action: 'nn_authenticate', args: [] })
+      });
+      var text = await r.text();
+      var data = JSON.parse(text || '{}');
+      if (!data || !data.ok || !data.result || !data.result.sessionToken) {
+        throw new Error(data && data.error ? data.error : 'セッション認証に失敗しました。');
+      }
+      nnSaveSessionToStorage(data.result.sessionToken, data.result.expiresAt || '');
+      return data.result.sessionToken;
+    }
     /** google.script.run または Pages 向け POST API */
     async function nnGasCall(action, args) {
       args = args || [];
@@ -626,12 +677,19 @@
       if (!url || !tok) {
         throw new Error('GAS の exec URL と API トークンが index に設定されていません。');
       }
-      var idToken = await nnEnsureGoogleIdToken();
+      var sess = nnValidSessionToken();
+      if (!sess) {
+        nnLoadSessionFromStorage();
+        sess = nnValidSessionToken();
+      }
+      if (!sess) {
+        sess = await nnAuthenticateSession();
+      }
       var r = await fetch(url, {
         method: 'POST',
         credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ token: tok, idToken: idToken, action: action, args: args })
+        body: JSON.stringify({ token: tok, sessionToken: sess, action: action, args: args })
       });
       var text = await r.text();
       var data;
@@ -641,10 +699,16 @@
         throw new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200));
       }
       if (!data || !data.ok) {
-        throw new Error(data && data.error ? data.error : 'API error');
+        var errMsg = data && data.error ? String(data.error) : 'API error';
+        if (errMsg.indexOf('Session') >= 0 || errMsg.indexOf('session') >= 0 || errMsg.indexOf('Unauthorized') >= 0) {
+          nnClearSession();
+        }
+        throw new Error(errMsg);
       }
       return data.result;
     }
+
+    nnLoadSessionFromStorage();
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 

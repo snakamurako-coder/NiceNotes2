@@ -12,6 +12,8 @@ var NN_PAGES_API_TOKEN_ALLOWLIST_PROP = 'NICENOTES_PAGES_API_TOKEN_ALLOWLIST';
 var NN_PAGES_ALLOWED_EMAILS_PROP = 'NICENOTES_PAGES_ALLOWED_EMAILS';
 /** Script Properties: Google OAuth クライアントID（任意） */
 var NN_PAGES_GOOGLE_CLIENT_ID_PROP = 'NICENOTES_PAGES_GOOGLE_CLIENT_ID';
+var NN_PAGES_SESSION_PREFIX = 'NN_PAGES_SESSION_';
+var NN_PAGES_SESSION_DAYS = 30;
 
 function nn_pagesApiJsonOut_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
@@ -71,6 +73,56 @@ function nn_verifyGoogleIdToken_(idToken) {
   }
 }
 
+function nn_digestHex_(text) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text || ''));
+  return bytes.map(function (b) {
+    var v = (b + 256) % 256;
+    return ('0' + v.toString(16)).slice(-2);
+  }).join('');
+}
+
+function nn_sessionKey_(sessionToken) {
+  return NN_PAGES_SESSION_PREFIX + nn_digestHex_(sessionToken);
+}
+
+/**
+ * @param {string} email
+ * @return {{sessionToken: string, expiresAt: string, email: string}}
+ */
+function nn_issueSession_(email) {
+  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  var now = new Date();
+  var exp = new Date(now.getTime() + NN_PAGES_SESSION_DAYS * 24 * 60 * 60 * 1000);
+  var rec = {
+    email: String(email || '').toLowerCase(),
+    issuedAt: now.toISOString(),
+    expiresAt: exp.toISOString(),
+  };
+  PropertiesService.getScriptProperties().setProperty(nn_sessionKey_(token), JSON.stringify(rec));
+  return { sessionToken: token, expiresAt: rec.expiresAt, email: rec.email };
+}
+
+/**
+ * @param {string} sessionToken
+ * @return {{ok: boolean, email?: string, error?: string}}
+ */
+function nn_validateSession_(sessionToken) {
+  var token = String(sessionToken || '').trim();
+  if (!token) return { ok: false, error: 'Session token is required' };
+  var raw = PropertiesService.getScriptProperties().getProperty(nn_sessionKey_(token));
+  if (!raw) return { ok: false, error: 'Session not found' };
+  try {
+    var rec = JSON.parse(raw);
+    var email = String(rec.email || '').toLowerCase();
+    var exp = new Date(String(rec.expiresAt || ''));
+    if (!email || isNaN(exp.getTime())) return { ok: false, error: 'Session is invalid' };
+    if (Date.now() > exp.getTime()) return { ok: false, error: 'Session expired' };
+    return { ok: true, email: email };
+  } catch (e) {
+    return { ok: false, error: 'Session parse error' };
+  }
+}
+
 /**
  * 既存単一トークン + allowlist のどちらかに一致すれば認可。
  * @param {string} presented
@@ -93,7 +145,7 @@ function nn_isAuthorizedPagesToken_(presented) {
  * GitHub Pages 等（別オリジン）からの呼び出し用 JSON API。
  * ブラウザの CORS プリフライトを避けるため、クライアントは Content-Type: text/plain で JSON を送る。
  *
- * POST body JSON: `{ "token": string, "action": string, "args": any[] }`
+ * POST body JSON: `{ "token": string, "action": string, "args": any[], "idToken"?: string, "sessionToken"?: string }`
  * 応答: `{ "ok": true, "result": ... }` または `{ "ok": false, "error": string }`
  */
 function doPost(e) {
@@ -102,7 +154,7 @@ function doPost(e) {
     if (e && e.postData && typeof e.postData.contents === 'string') raw = e.postData.contents;
     else raw = '{}';
 
-    /** @type {{ token?: string, idToken?: string, action?: string, args?: unknown }} */
+    /** @type {{ token?: string, idToken?: string, sessionToken?: string, action?: string, args?: unknown }} */
     let body;
     try {
       body = JSON.parse(raw || '{}');
@@ -118,21 +170,43 @@ function doPost(e) {
     }
 
     const idt = nn_verifyGoogleIdToken_(body.idToken);
-    if (!idt.ok) {
+    const action = String(body.action || '');
+    const allowedEmails = nn_pagesAllowedEmails_();
+
+    function isAllowedEmail_(email) {
+      return allowedEmails.length > 0 && allowedEmails.indexOf(String(email || '').toLowerCase()) >= 0;
+    }
+
+    if (action === 'nn_authenticate') {
+      if (!idt.ok) {
+        return nn_pagesApiJsonOut_({
+          ok: false,
+          error: 'Unauthorized: ' + (idt.error || 'Invalid Google account'),
+        });
+      }
+      if (!isAllowedEmail_(idt.email)) {
+        return nn_pagesApiJsonOut_({
+          ok: false,
+          error: 'Forbidden: your Google account is not allowlisted',
+        });
+      }
+      return nn_pagesApiJsonOut_({ ok: true, result: nn_issueSession_(idt.email) });
+    }
+
+    const session = nn_validateSession_(body.sessionToken);
+    if (!session.ok) {
       return nn_pagesApiJsonOut_({
         ok: false,
-        error: 'Unauthorized: ' + (idt.error || 'Invalid Google account'),
+        error: 'Unauthorized: ' + (session.error || 'Invalid session'),
       });
     }
-    const allowedEmails = nn_pagesAllowedEmails_();
-    if (allowedEmails.length === 0 || allowedEmails.indexOf(String(idt.email || '').toLowerCase()) < 0) {
+    if (!isAllowedEmail_(session.email)) {
       return nn_pagesApiJsonOut_({
         ok: false,
         error: 'Forbidden: your Google account is not allowlisted',
       });
     }
 
-    const action = body.action;
     const argList = body.args !== undefined && body.args !== null ? body.args : [];
     const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
     return nn_pagesApiJsonOut_({ ok: true, result: result });
