@@ -623,8 +623,9 @@
   </div>
 
   <script>
-    /** GitHub Actions がデプロイ時に検索置換注入（開発・clasp は空のまま） */
-    window.NN_GAS_EXEC_URL = '';
+    /** GitHub Actions がデプロイ時に上書き可。GAS 内表示では google.script.run が優先され、この URL は未使用になることがあります。 */
+    window.NN_GAS_EXEC_URL =
+      'https://script.google.com/macros/s/AKfycbzVKfA43QMiWDj41FWrYNhwtRSM6M_GdGetsXLQWZoFeQdHSnBjDX4JXgmzD07WqJ71/exec';
     window.NN_GAS_API_TOKEN = '';
 
     function nnGasExecUrl() {
