@@ -80,6 +80,16 @@ function nn_pagesApiDispatch_(action, args) {
       return saveAnnotation.apply(null, a);
     case 'getFileList':
       return getFileList.apply(null, a);
+    case 'nn_getWorkspacePrefs':
+      return nn_getWorkspacePrefs.apply(null, a);
+    case 'nn_setFolderViewMode':
+      return nn_setFolderViewMode.apply(null, a);
+    case 'nn_setTreeManualOrder':
+      return nn_setTreeManualOrder.apply(null, a);
+    case 'nn_moveDriveFile':
+      return nn_moveDriveFile.apply(null, a);
+    case 'nn_moveDriveFolder':
+      return nn_moveDriveFolder.apply(null, a);
     case 'getFileData':
       return getFileData.apply(null, a);
     case 'recognizeSentence':
@@ -376,7 +386,13 @@ function getFolderTree(forceRefresh) {
 
   function scan(folder, parentId) {
     const currentId = folder.getId();
-    resultFolders.push({ id: currentId, name: folder.getName(), parentId: parentId });
+    resultFolders.push({
+      id: currentId,
+      name: folder.getName(),
+      parentId: parentId,
+      updated: folder.getLastUpdated().getTime(),
+      created: folder.getDateCreated().getTime(),
+    });
 
     const fIter = folder.getFiles();
     while (fIter.hasNext()) {
@@ -416,6 +432,206 @@ function getFolderTree(forceRefresh) {
   else rootFolder.createFile(cacheFileName, jsonString, MimeType.PLAIN_TEXT);
 
   return result;
+}
+
+// --- ワークスペース UserProperties（フォルダ表示モード・手動並び）-----------------
+
+const NN_UPROP_FOLDER_VIEW_MODES = 'NN_FOLDER_VIEW_MODES';
+const NN_UPROP_TREE_MANUAL_ORDER = 'NN_TREE_MANUAL_ORDER';
+
+function nn_upropGetJson_(key, fallback) {
+  const raw = PropertiesService.getUserProperties().getProperty(key);
+  if (!raw) return fallback;
+  try {
+    const o = JSON.parse(raw);
+    return o !== null && typeof o === 'object' ? o : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function nn_upropSetJson_(key, obj) {
+  PropertiesService.getUserProperties().setProperty(key, JSON.stringify(obj));
+}
+
+/**
+ * @return {{ folderViewModes: Object.<string,string>, treeManualOrder: { v:number, rootFolderIds: string[], childFolders: Object.<string,string[]>, filesByFolder: Object.<string,string[]> } }}
+ */
+function nn_getWorkspacePrefs() {
+  const modes = nn_upropGetJson_(NN_UPROP_FOLDER_VIEW_MODES, {});
+  const order = nn_upropGetJson_(NN_UPROP_TREE_MANUAL_ORDER, {
+    v: 1,
+    rootFolderIds: [],
+    childFolders: {},
+    filesByFolder: {},
+  });
+  if (!order || typeof order !== 'object') {
+    return { folderViewModes: modes, treeManualOrder: { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} } };
+  }
+  return {
+    folderViewModes: typeof modes === 'object' && modes !== null ? modes : {},
+    treeManualOrder: {
+      v: order.v != null ? order.v : 1,
+      rootFolderIds: Array.isArray(order.rootFolderIds) ? order.rootFolderIds : [],
+      childFolders: typeof order.childFolders === 'object' && order.childFolders !== null ? order.childFolders : {},
+      filesByFolder: typeof order.filesByFolder === 'object' && order.filesByFolder !== null ? order.filesByFolder : {},
+    },
+  };
+}
+
+/**
+ * @param {string} folderId
+ * @param {string} mode seamless|single
+ */
+function nn_setFolderViewMode(folderId, mode) {
+  const id = nn_cellStr_(folderId);
+  const m = nn_cellStr_(mode);
+  if (!id) {
+    throw new Error('NN_E_FOLDER_ID');
+  }
+  if (m !== 'seamless' && m !== 'single') {
+    throw new Error('NN_E_VIEW_MODE');
+  }
+  const all = nn_getWorkspacePrefs().folderViewModes || {};
+  all[id] = m;
+  nn_upropSetJson_(NN_UPROP_FOLDER_VIEW_MODES, all);
+  return { success: true };
+}
+
+/**
+ * @param {*} orderObj nn_getWorkspacePrefs().treeManualOrder と同形
+ */
+function nn_setTreeManualOrder(orderObj) {
+  const o = orderObj && typeof orderObj === 'object' ? orderObj : {};
+  nn_upropSetJson_(NN_UPROP_TREE_MANUAL_ORDER, {
+    v: 1,
+    rootFolderIds: Array.isArray(o.rootFolderIds) ? o.rootFolderIds.map(String) : [],
+    childFolders: typeof o.childFolders === 'object' && o.childFolders !== null ? o.childFolders : {},
+    filesByFolder: typeof o.filesByFolder === 'object' && o.filesByFolder !== null ? o.filesByFolder : {},
+  });
+  return { success: true };
+}
+
+function nn_getTreeRootFolderIds_() {
+  const props = PropertiesService.getScriptProperties();
+  const roots = [];
+  const mainId = nn_getMainFolderId_();
+  if (mainId) roots.push(mainId);
+  const registeredStr = props.getProperty('REGISTERED_FOLDERS');
+  if (registeredStr) {
+    try {
+      const arr = JSON.parse(registeredStr);
+      if (Array.isArray(arr)) {
+        let i;
+        for (i = 0; i < arr.length; i++) {
+          if (arr[i]) roots.push(String(arr[i]));
+        }
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  return Array.from(new Set(roots));
+}
+
+/**
+ * ワークスペースから到達可能な全フォルダ id（ルート＋子孫）
+ * @return {Object.<string,boolean>}
+ */
+function nn_collectAccessibleFolderIdsSet_() {
+  const set = {};
+  function scanFolder(folder) {
+    const id = folder.getId();
+    set[id] = true;
+    const subs = folder.getFolders();
+    while (subs.hasNext()) {
+      scanFolder(subs.next());
+    }
+  }
+  const roots = nn_getTreeRootFolderIds_();
+  let r;
+  for (r = 0; r < roots.length; r++) {
+    try {
+      scanFolder(DriveApp.getFolderById(roots[r]));
+    } catch (e) {
+      Logger.log('nn_collectAccessibleFolderIdsSet_: skip root ' + roots[r] + ' ' + e);
+    }
+  }
+  return set;
+}
+
+function nn_getSingleParentFolderId_(fileOrFolderId) {
+  const it = DriveApp.getFileById(fileOrFolderId).getParents();
+  return it.hasNext() ? it.next().getId() : null;
+}
+
+/**
+ * newParent が movingFolder の子孫なら true（移動禁止）
+ */
+function nn_wouldCreateFolderCycle_(movingFolderId, newParentId) {
+  let cur = newParentId;
+  let g = 0;
+  while (cur && g++ < 300) {
+    if (cur === movingFolderId) {
+      return true;
+    }
+    cur = nn_getSingleParentFolderId_(cur);
+  }
+  return false;
+}
+
+/**
+ * @param {string} fileId
+ * @param {string} targetFolderId
+ */
+function nn_moveDriveFile(fileId, targetFolderId) {
+  const fid = nn_cellStr_(fileId);
+  const tid = nn_cellStr_(targetFolderId);
+  if (!fid || !tid) {
+    throw new Error('NN_E_MOVE_ARGS');
+  }
+  const allowed = nn_collectAccessibleFolderIdsSet_();
+  if (!allowed[tid]) {
+    throw new Error('NN_E_MOVE_TARGET_OUTSIDE');
+  }
+  const f = DriveApp.getFileById(fid);
+  const mime = f.getMimeType();
+  if (mime !== MimeType.PDF && mime !== MimeType.JPEG && mime !== MimeType.PNG) {
+    throw new Error('NN_E_MOVE_NOT_MEDIA');
+  }
+  const parIt = f.getParents();
+  if (parIt.hasNext()) {
+    const pid = parIt.next().getId();
+    if (!allowed[pid]) {
+      throw new Error('NN_E_MOVE_SOURCE_OUTSIDE');
+    }
+  }
+  f.moveTo(DriveApp.getFolderById(tid));
+  return { success: true };
+}
+
+/**
+ * @param {string} folderId
+ * @param {string} newParentId
+ */
+function nn_moveDriveFolder(folderId, newParentId) {
+  const cid = nn_cellStr_(folderId);
+  const pid = nn_cellStr_(newParentId);
+  if (!cid || !pid) {
+    throw new Error('NN_E_MOVE_ARGS');
+  }
+  if (cid === pid) {
+    throw new Error('NN_E_MOVE_SAME');
+  }
+  const allowed = nn_collectAccessibleFolderIdsSet_();
+  if (!allowed[cid] || !allowed[pid]) {
+    throw new Error('NN_E_MOVE_OUTSIDE');
+  }
+  if (nn_wouldCreateFolderCycle_(cid, pid)) {
+    throw new Error('NN_E_MOVE_CYCLE');
+  }
+  DriveApp.getFileById(cid).moveTo(DriveApp.getFolderById(pid));
+  return { success: true };
 }
 
 function updateMeetingState(stateJson) {

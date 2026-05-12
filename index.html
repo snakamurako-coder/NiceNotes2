@@ -12,7 +12,14 @@
     input[type="range"] { width: 90px; cursor: pointer; } 
     input[type="number"] { width: 45px; padding: 2px 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; }
     button, select { padding: 6px 10px; font-size: 14px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; background: #fff;}
-    #folder-select { background: #f8f9fa; font-weight: bold; border-color: #aaa; }
+    #pdf-legacy-tools { align-items: center; gap: 8px; }
+    .folder-tree .folder-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 2px 0; min-height: 30px; }
+    .folder-tree .folder-row.drag-over { outline: 2px dashed #1a73e8; background: #e8f0fe; border-radius: 6px; }
+    .folder-tree .folder-mode-sel { font-size: 11px; max-width: 100px; padding: 2px 4px; }
+    .folder-tree .folder-drag-hint { cursor: grab; font-size: 12px; color: #5f6368; user-select: none; padding: 0 4px; }
+    .file-item { position: relative; }
+    .file-item.drag-over { outline: 2px dashed #0f9d58; border-radius: 8px; }
+    .file-item[draggable='true'] .file-name { cursor: grab; }
     #role-select { background: #e8eaed; font-weight: bold; border-color: #9aa0a6; color: #202124; }
     #role-select.role-presenter { background: #fce8e6; border-color: #ea4335; color: #c5221f; }
     #role-select.role-participant { background: #e6f4ea; border-color: #34a853; color: #137333; }
@@ -49,6 +56,8 @@
     .explorer-toolbar { padding: 10px 15px; background: #fafafa; border-bottom: 1px solid #e0e0e0; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .explorer-body { display: flex; flex: 1; overflow: hidden; }
     .folder-tree { width: 30%; min-width: 160px; border-right: 1px solid #e0e0e0; overflow-y: auto; padding: 10px; background: #fdfdfd; }
+    .nn-folder-branch { margin-bottom: 2px; }
+    .nn-folder-children { margin-left: 12px; padding-left: 8px; border-left: 1px solid #e8eaed; }
     .folder-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; cursor: pointer; border-radius: 4px; font-size: 14px; color: #333; }
     .folder-item:hover { background: #e8eaed; }
     .folder-item.selected { background: #e8f0fe; color: var(--primary); font-weight: bold; }
@@ -137,6 +146,10 @@
       background: #fff; border: 1px solid #dadce0; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
       display: flex; align-items: flex-start; gap: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06);
     }
+    .nn-task-card.nn-task-dnd-source { cursor: grab; }
+    .nn-task-card.nn-task-dnd-source:active { cursor: grabbing; }
+    .nn-task-card.drag-over { outline: 2px dashed #1a73e8; background: #f8fbff; border-radius: 10px; }
+    .nn-task-subgroup-items { margin-bottom: 4px; }
     .nn-task-card.done { opacity: 0.72; }
     .nn-task-card input[type="checkbox"] { margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
     .nn-task-body { flex: 1; min-width: 0; }
@@ -154,7 +167,9 @@
     .nn-checklist-preview {
       list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; color: #3c4043;
     }
-    .nn-checklist-preview li { margin-bottom: 4px; }
+    .nn-checklist-preview li.nn-ci-dnd { margin-bottom: 4px; cursor: grab; border-radius: 6px; padding: 2px 0; }
+    .nn-checklist-preview li.nn-ci-dnd:active { cursor: grabbing; }
+    .nn-checklist-preview li.nn-ci-dnd.drag-over { outline: 2px dashed #0f9d58; background: #e6f4ea; }
     .nn-checklist-preview label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 13px; margin: 0; color: inherit; }
     .nn-checklist-preview input { margin-top: 2px; flex-shrink: 0; }
     .nn-ci-text.done { text-decoration: line-through; color: #5f6368; }
@@ -421,7 +436,15 @@
           <button type="button" class="btn-meeting-action" style="background:#0f9d58;" onclick="openAddModal()">➕ データ追加</button>
           <span style="color:#aaa; font-size:12px;">|</span>
           <button type="button" class="file-btn-meet" onclick="loadFolderTree(true)">🔄 ツリーを最新に更新</button>
-          <label style="margin:0 0 0 10px; display:inline;">並び替え:</label>
+          <label style="margin:0 0 0 10px; display:inline;">ツリー並び:</label>
+          <select id="folder-structure-sort" onchange="nnOnFolderStructureSortChange()" title="手動順はドラッグで変更後に保存されます">
+            <option value="manual">手動（ドラッグ）</option>
+            <option value="name">名前で上書き</option>
+            <option value="updated">更新日時で上書き</option>
+            <option value="created">作成日時で上書き</option>
+          </select>
+          <span style="color:#aaa;font-size:12px;">|</span>
+          <label style="margin:0 0 0 10px; display:inline;">ファイル並び:</label>
           <select id="sort-type-meet" onchange="renderFilesMeet()">
             <option value="updated">更新日時 (新しい順)</option>
             <option value="created">作成日時 (新しい順)</option>
@@ -453,11 +476,8 @@
       </select>
       <span id="legacy-collab-disabled-hint" style="display:none;font-size:11px;color:#5f6368;max-width:160px;line-height:1.35;margin-left:6px;">一覧モードでは共有同期・発表者役割は利用できません</span>
     </div>
-    <div class="tool-group" id="pdf-legacy-tools">
-      <select id="folder-select" onchange="fetchFileList()">
-        <option value="seamless">シームレス管理</option>
-        <option value="single">個別ビューア</option>
-      </select>
+    <div class="tool-group" id="pdf-legacy-tools" style="display: none">
+      <span style="font-size: 11px; color: #5f6368">フォルダ内</span>
       <select id="file-select" onchange="onFileDropdownChanged()"></select>
     </div>
     
@@ -688,7 +708,6 @@
     const pageIndicator = document.getElementById('page-indicator');
     const myLaserDot = document.getElementById('my-laser');
     
-    const folderSelect = document.getElementById('folder-select');
     const fileSelect = document.getElementById('file-select');
     const loader = document.getElementById('loader');
     const loaderText = document.getElementById('loader-text');
@@ -712,6 +731,8 @@
     let lastStrokeTime = Date.now();
     let lastLocalStrokeTime = 0;
     let treeData = { folders: [], files: [], folderColors: {} };
+    window.nnFolderViewModes = {};
+    window.nnTreeManualOrder = { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} };
     let currentFolderId = null;
     let sortOrderMeet = -1;
     let legacyFolderNavActive = false;
@@ -909,6 +930,13 @@
     }
     window.nnVirtualPageDupFeatureAllowed = nnVirtualPageDupFeatureAllowed;
 
+    function nnUpdateLegacyToolsBarVisibility() {
+      var el = document.getElementById('pdf-legacy-tools');
+      if (!el) return;
+      var show = legacyFolderNavActive && fileSelect && fileSelect.options && fileSelect.options.length > 0;
+      el.style.display = show ? 'flex' : 'none';
+    }
+
     function nnRefreshCollaborationToolbar() {
       var active = nnMeetingRealtimeCollaborationActive();
       var hint = document.getElementById('legacy-collab-disabled-hint');
@@ -918,8 +946,9 @@
       roleSelect.style.cursor = active ? '' : 'not-allowed';
       roleSelect.title = active
         ? 'ホームの会議ワークスペースで開いたときのみリアルタイム共有が有効です'
-        : '上部のフォルダ一覧から開いているためリアルタイム共有・発表者役割は無効です';
+        : 'ホームで「シームレス」にしたフォルダ内一覧から開いているため、リアルタイム共有・発表者役割は無効です';
       applyRoleMeet();
+      nnUpdateLegacyToolsBarVisibility();
     }
 
     window.onload = function () {
@@ -937,12 +966,12 @@
             showStartupGate();
           } else {
             alert(res && res.error ? res.error : '初期化に失敗しました');
-            fetchFileList();
+            loadFolderTree(false);
           }
         })
         .catch(function () {
           hideLoader();
-          fetchFileList();
+          loadFolderTree(false);
         });
     };
     function showLoader(text) { loaderText.textContent = text; loader.style.display = 'flex'; }
@@ -1059,16 +1088,462 @@
       nnRefreshCollaborationToolbar();
     }
 
+    function nnMergeIdOrder(manualArr, sortedAllIds) {
+      var seen = {};
+      var out = [];
+      var i;
+      if (Array.isArray(manualArr)) {
+        for (i = 0; i < manualArr.length; i++) {
+          var id = String(manualArr[i]);
+          if (sortedAllIds.indexOf(id) !== -1 && !seen[id]) {
+            seen[id] = true;
+            out.push(id);
+          }
+        }
+      }
+      for (i = 0; i < sortedAllIds.length; i++) {
+        var id2 = sortedAllIds[i];
+        if (!seen[id2]) {
+          seen[id2] = true;
+          out.push(id2);
+        }
+      }
+      return out;
+    }
+
+    function nnSortFolderRecords(recs, key) {
+      var desc = key !== 'name';
+      return recs.slice().sort(function (a, b) {
+        var va;
+        var vb;
+        if (key === 'name') {
+          va = String(a.name || '').toLowerCase();
+          vb = String(b.name || '').toLowerCase();
+        } else {
+          va = a[key] != null ? Number(a[key]) : 0;
+          vb = b[key] != null ? Number(b[key]) : 0;
+        }
+        if (va < vb) return desc ? 1 : -1;
+        if (va > vb) return desc ? -1 : 1;
+        return 0;
+      });
+    }
+
+    function nnSortFileRecords(files, sortType, ord) {
+      return files.slice().sort(function (a, b) {
+        var valA = sortType === 'name' ? String(a.name || '').toLowerCase() : a[sortType];
+        var valB = sortType === 'name' ? String(b.name || '').toLowerCase() : b[sortType];
+        if (valA < valB) return -1 * ord;
+        if (valA > valB) return 1 * ord;
+        return 0;
+      });
+    }
+
+    function nnStructureDefaultKey() {
+      var sel = document.getElementById('folder-structure-sort');
+      var v = sel ? sel.value : 'manual';
+      return v === 'manual' ? 'name' : v;
+    }
+
+    function nnApplyWorkspacePrefs_(prefs) {
+      window.nnFolderViewModes =
+        prefs && prefs.folderViewModes && typeof prefs.folderViewModes === 'object' ? prefs.folderViewModes : {};
+      var o = prefs && prefs.treeManualOrder && typeof prefs.treeManualOrder === 'object' ? prefs.treeManualOrder : {};
+      window.nnTreeManualOrder = {
+        v: o.v != null ? o.v : 1,
+        rootFolderIds: Array.isArray(o.rootFolderIds) ? o.rootFolderIds.slice() : [],
+        childFolders:
+          typeof o.childFolders === 'object' && o.childFolders
+            ? JSON.parse(JSON.stringify(o.childFolders))
+            : {},
+        filesByFolder:
+          typeof o.filesByFolder === 'object' && o.filesByFolder
+            ? JSON.parse(JSON.stringify(o.filesByFolder))
+            : {},
+      };
+    }
+
+    function nnOrderedRootFolderIds() {
+      var recs = (treeData.folders || []).filter(function (f) {
+        return f.parentId === null;
+      });
+      var key = nnStructureDefaultKey();
+      var sorted = nnSortFolderRecords(recs, key).map(function (f) {
+        return f.id;
+      });
+      return nnMergeIdOrder(window.nnTreeManualOrder.rootFolderIds || [], sorted);
+    }
+
+    function nnOrderedChildFolderIds(parentId) {
+      var recs = (treeData.folders || []).filter(function (f) {
+        return f.parentId === parentId;
+      });
+      var key = nnStructureDefaultKey();
+      var sorted = nnSortFolderRecords(recs, key).map(function (f) {
+        return f.id;
+      });
+      var manual = (window.nnTreeManualOrder.childFolders || {})[parentId] || [];
+      return nnMergeIdOrder(manual, sorted);
+    }
+
+    function nnDefaultSortedFileIds(folderId) {
+      var sortEl = document.getElementById('sort-type-meet');
+      var sortType = sortEl ? sortEl.value : 'updated';
+      var files = (treeData.files || []).filter(function (f) {
+        return f.folderId === folderId;
+      });
+      return nnSortFileRecords(files, sortType, sortOrderMeet).map(function (f) {
+        return f.id;
+      });
+    }
+
+    function nnOrderedFileIdsForFolder(folderId) {
+      var manual = (window.nnTreeManualOrder.filesByFolder || {})[folderId] || [];
+      return nnMergeIdOrder(manual, nnDefaultSortedFileIds(folderId));
+    }
+
+    function nnFirstOrderedFolderId() {
+      var roots = nnOrderedRootFolderIds();
+      if (!roots.length) return null;
+      var cur = roots[0];
+      while (true) {
+        var kids = nnOrderedChildFolderIds(cur);
+        if (!kids.length) return cur;
+        cur = kids[0];
+      }
+    }
+
+    function nnTreeParentOfFolder_(folderId) {
+      var rec = (treeData.folders || []).find(function (x) {
+        return x.id === folderId;
+      });
+      return rec ? rec.parentId : null;
+    }
+
+    function nnFolderDropZone(ev, rowEl) {
+      var r = rowEl.getBoundingClientRect();
+      var y = ev.clientY - r.top;
+      var h = r.height || 1;
+      if (y < h * 0.25) return 'before';
+      if (y > h * 0.75) return 'after';
+      return 'inside';
+    }
+
+    function nnFileDropZone(ev, rowEl) {
+      return nnFolderDropZone(ev, rowEl);
+    }
+
+    function nnRebuildManualOrderFromStructureSort(structKey) {
+      var folders = treeData.folders || [];
+      var o = { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} };
+      var rootRecs = folders.filter(function (f) {
+        return f.parentId === null;
+      });
+      var sortedRoots = nnSortFolderRecords(rootRecs, structKey);
+      o.rootFolderIds = sortedRoots.map(function (x) {
+        return x.id;
+      });
+      function visitFolder(fid) {
+        var kids = folders.filter(function (f) {
+          return f.parentId === fid;
+        });
+        if (!kids.length) return;
+        var sortedKids = nnSortFolderRecords(kids, structKey);
+        o.childFolders[fid] = sortedKids.map(function (x) {
+          return x.id;
+        });
+        var i;
+        for (i = 0; i < sortedKids.length; i++) visitFolder(sortedKids[i].id);
+      }
+      var r;
+      for (r = 0; r < o.rootFolderIds.length; r++) visitFolder(o.rootFolderIds[r]);
+      var fileSortEl = document.getElementById('sort-type-meet');
+      var st = fileSortEl ? fileSortEl.value : 'updated';
+      var fi;
+      for (fi = 0; fi < folders.length; fi++) {
+        var folderId = folders[fi].id;
+        var files = (treeData.files || []).filter(function (g) {
+          return g.folderId === folderId;
+        });
+        var sortedFiles = nnSortFileRecords(files, st, sortOrderMeet);
+        o.filesByFolder[folderId] = sortedFiles.map(function (x) {
+          return x.id;
+        });
+      }
+      return o;
+    }
+
+    function nnOnFolderStructureSortChange() {
+      var sel = document.getElementById('folder-structure-sort');
+      var v = sel ? sel.value : 'manual';
+      if (v === 'manual') {
+        renderFolders();
+        return;
+      }
+      if (!treeData || !treeData.folders) return;
+      var o = nnRebuildManualOrderFromStructureSort(v);
+      window.nnTreeManualOrder = o;
+      nnGasCall('nn_setTreeManualOrder', [o])
+        .then(function () {
+          renderFolders();
+        })
+        .catch(function (e) {
+          alert(e && e.message ? e.message : String(e));
+        });
+    }
+
+    function nnReorderFolderAmongSiblingsThenPersist_(dragId, targetId, zone, parentId) {
+      var o = window.nnTreeManualOrder;
+      var cur = parentId == null ? nnOrderedRootFolderIds() : nnOrderedChildFolderIds(parentId);
+      cur = cur.slice();
+      var without = cur.filter(function (x) {
+        return x !== dragId;
+      });
+      var idx = without.indexOf(targetId);
+      var insertAt =
+        zone === 'before' ? (idx === -1 ? 0 : idx) : idx === -1 ? without.length : idx + 1;
+      var newArr = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+      if (parentId == null) o.rootFolderIds = newArr;
+      else {
+        if (!o.childFolders) o.childFolders = {};
+        o.childFolders[parentId] = newArr;
+      }
+      return nnGasCall('nn_setTreeManualOrder', [o]).then(function () {
+        renderFolders();
+      });
+    }
+
+    function nnReorderFileInFolderPersist_(dragId, targetId, zone) {
+      var o = window.nnTreeManualOrder;
+      var cur = nnOrderedFileIdsForFolder(currentFolderId).slice();
+      var without = cur.filter(function (x) {
+        return x !== dragId;
+      });
+      var idx = without.indexOf(targetId);
+      var insertAt =
+        zone === 'before' ? (idx === -1 ? 0 : idx) : idx === -1 ? without.length : idx + 1;
+      var newArr = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+      if (!o.filesByFolder) o.filesByFolder = {};
+      o.filesByFolder[currentFolderId] = newArr;
+      return nnGasCall('nn_setTreeManualOrder', [o]).then(function () {
+        renderFilesMeet();
+      });
+    }
+
+    function nnPopulateFileSelectFromFolder_(folderId, preferredFileId) {
+      fileSelect.innerHTML = '';
+      var ids = nnOrderedFileIdsForFolder(folderId);
+      var byId = {};
+      (treeData.files || []).forEach(function (f) {
+        byId[f.id] = f;
+      });
+      var j;
+      for (j = 0; j < ids.length; j++) {
+        var oid = ids[j];
+        var fr = byId[oid];
+        if (!fr) continue;
+        var opt = document.createElement('option');
+        opt.value = oid;
+        opt.textContent = fr.name || 'file';
+        fileSelect.appendChild(opt);
+      }
+      if (preferredFileId && byId[preferredFileId]) {
+        fileSelect.value = preferredFileId;
+      }
+      currentFileId = fileSelect.value || preferredFileId;
+      if (fileSelect.selectedIndex >= 0 && fileSelect.options.length) {
+        fileName = fileSelect.options[fileSelect.selectedIndex].text;
+      } else {
+        fileName = (byId[preferredFileId] && byId[preferredFileId].name) || 'document.pdf';
+      }
+    }
+
+    function nnWireFolderRowInteraction_(row, folderId) {
+      row.addEventListener('dragstart', function (ev) {
+        if (ev.target.closest && ev.target.closest('select,button')) {
+          ev.preventDefault();
+          return;
+        }
+        ev.dataTransfer.setData('text/plain', JSON.stringify({ t: 'folder', id: folderId }));
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', function () {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('dragend', function () {
+        row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', function (ev) {
+        ev.preventDefault();
+        row.classList.remove('drag-over');
+        var raw = ev.dataTransfer.getData('text/plain');
+        var payload = null;
+        try {
+          payload = JSON.parse(raw);
+        } catch (e2) {
+          return;
+        }
+        if (!payload || !payload.t) return;
+        var zone = nnFolderDropZone(ev, row);
+        if (payload.t === 'file') {
+          if (zone !== 'inside') return;
+          if (payload.srcFolder === folderId) return;
+          if (
+            !confirm(
+              'ファイル「' +
+                (payload.name || payload.id) +
+                '」をこのフォルダに移動しますか？\n（Google Drive 上で移動します。共有ドライブや権限によっては失敗することがあります）'
+            )
+          )
+            return;
+          nnGasCall('nn_moveDriveFile', [payload.id, folderId])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+          return;
+        }
+        if (payload.t !== 'folder') return;
+        var dragId = payload.id;
+        if (dragId === folderId) return;
+        var pT = nnTreeParentOfFolder_(folderId);
+        var pD = nnTreeParentOfFolder_(dragId);
+        if (zone === 'inside') {
+          if (!confirm('フォルダをこの中に移動しますか？（Drive の親フォルダが変わります）')) return;
+          nnGasCall('nn_moveDriveFolder', [dragId, folderId])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+          return;
+        }
+        if (zone === 'before' || zone === 'after') {
+          if (pT === null && pD !== null) {
+            alert(
+              'ルートと同じ列への移動は、Drive 上の親がワークスペース外の場合があります。別のフォルダへ入れ子にする操作を試してください。'
+            );
+            return;
+          }
+          if (pT === pD || (pT === null && pD === null)) {
+            if (!confirm('フォルダの表示順のみを変更します（Drive の親は変えません）。よろしいですか？')) return;
+            nnReorderFolderAmongSiblingsThenPersist_(dragId, folderId, zone, pT).catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+            return;
+          }
+          var newPar = pT;
+          if (newPar === null) {
+            alert('この並べ替えは未対応です。');
+            return;
+          }
+          if (!confirm('フォルダの親を変更して、この近くに移しますか？（Drive 上で移動）')) return;
+          nnGasCall('nn_moveDriveFolder', [dragId, newPar])
+            .then(function () {
+              return loadFolderTree(true);
+            })
+            .catch(function (er) {
+              alert(er && er.message ? er.message : String(er));
+            });
+        }
+      });
+    }
+
+    function nnBuildFolderBranch_(folderId) {
+      var wrap = document.createElement('div');
+      wrap.className = 'nn-folder-branch';
+      var colors = treeData.folderColors || {};
+      var folderColor = colors[folderId] || '#ccc';
+      var row = document.createElement('div');
+      row.className = 'folder-item folder-row' + (currentFolderId === folderId ? ' selected' : '');
+      row.setAttribute('data-folder-id', folderId);
+      row.draggable = true;
+      var hint = document.createElement('span');
+      hint.className = 'folder-drag-hint';
+      hint.textContent = '⠿';
+      hint.title = 'ドラッグ: 行の上／下＝表示順、中央＝このフォルダの中へ移動';
+      var label = document.createElement('div');
+      label.className = 'folder-label';
+      var dot = document.createElement('span');
+      dot.className = 'color-dot';
+      dot.style.backgroundColor = folderColor;
+      label.appendChild(dot);
+      var rec = (treeData.folders || []).find(function (x) {
+        return x.id === folderId;
+      });
+      label.appendChild(document.createTextNode(' 📁 ' + ((rec && rec.name) || '')));
+      label.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('button,select')) return;
+        selectFolderMeet(folderId);
+      });
+      var modeSel = document.createElement('select');
+      modeSel.className = 'folder-mode-sel';
+      modeSel.title = '書き込み画面でこのフォルダを開くときの挙動';
+      [['single', '個別'], ['seamless', 'シームレス']].forEach(function (pair) {
+        var op = document.createElement('option');
+        op.value = pair[0];
+        op.textContent = pair[1];
+        modeSel.appendChild(op);
+      });
+      var stored = window.nnFolderViewModes[folderId] === 'seamless' ? 'seamless' : 'single';
+      modeSel.value = stored;
+      modeSel.addEventListener('change', function () {
+        var v = modeSel.value;
+        nnGasCall('nn_setFolderViewMode', [folderId, v])
+          .then(function () {
+            window.nnFolderViewModes[folderId] = v;
+          })
+          .catch(function (er) {
+            alert(er && er.message ? er.message : String(er));
+            modeSel.value = stored;
+          });
+      });
+      var palBtn = document.createElement('button');
+      palBtn.type = 'button';
+      palBtn.className = 'btn-palette';
+      palBtn.title = '色を変更';
+      palBtn.textContent = '🎨';
+      palBtn.addEventListener('click', function (ev) {
+        openColorPalette(ev, folderId);
+      });
+      row.appendChild(hint);
+      row.appendChild(label);
+      row.appendChild(modeSel);
+      row.appendChild(palBtn);
+      nnWireFolderRowInteraction_(row, folderId);
+      var kidsWrap = document.createElement('div');
+      kidsWrap.className = 'nn-folder-children';
+      nnOrderedChildFolderIds(folderId).forEach(function (cid) {
+        kidsWrap.appendChild(nnBuildFolderBranch_(cid));
+      });
+      wrap.appendChild(row);
+      wrap.appendChild(kidsWrap);
+      return wrap;
+    }
+
     function loadFolderTree(forceRefresh) {
       var ts = document.getElementById('tree-status');
       if (ts) ts.textContent = 'データ取得中...';
       if (forceRefresh) showLoader('ドライブをスキャン中... (数秒かかります)');
-      nnGasCall('getFolderTree', [forceRefresh])
+      return nnGasCall('getFolderTree', [forceRefresh])
         .then(function (data) {
           if (forceRefresh) hideLoader();
           treeData = data || { folders: [], files: [], folderColors: {} };
           var lu = treeData.lastUpdated ? new Date(treeData.lastUpdated).toLocaleString() : '';
           if (ts) ts.textContent = lu ? '最終更新: ' + lu : '';
+          return nnGasCall('nn_getWorkspacePrefs', []).catch(function () {
+            return null;
+          });
+        })
+        .then(function (prefs) {
+          if (prefs) nnApplyWorkspacePrefs_(prefs);
           renderFolders();
         })
         .catch(function () {
@@ -1081,40 +1556,31 @@
       var container = document.getElementById('folder-tree-container');
       if (!container) return;
       container.innerHTML = '';
-      var colors = treeData.folderColors || {};
-      (treeData.folders || []).forEach(function (f) {
-        var div = document.createElement('div');
-        div.className = 'folder-item' + (f.id === currentFolderId ? ' selected' : '');
-        var folderColor = colors[f.id] || '#ccc';
-        var label = document.createElement('div');
-        label.className = 'folder-label';
-        var dot = document.createElement('span');
-        dot.className = 'color-dot';
-        dot.style.backgroundColor = folderColor;
-        label.appendChild(dot);
-        label.appendChild(document.createTextNode(' 📁 ' + (f.name || '')));
-        label.addEventListener('click', function () { selectFolderMeet(f.id); });
-        var palBtn = document.createElement('button');
-        palBtn.type = 'button';
-        palBtn.className = 'btn-palette';
-        palBtn.title = '色を変更';
-        palBtn.textContent = '🎨';
-        palBtn.addEventListener('click', function (ev) { openColorPalette(ev, f.id); });
-        div.appendChild(label);
-        div.appendChild(palBtn);
-        container.appendChild(div);
-      });
-      if (!currentFolderId && treeData.folders && treeData.folders.length > 0) {
-        currentFolderId = treeData.folders[0].id;
-        renderFolders();
+      if (!(treeData.folders && treeData.folders.length)) {
+        currentFolderId = null;
         renderFilesMeet();
+        return;
       }
+      if (
+        currentFolderId &&
+        !(treeData.folders || []).some(function (x) {
+          return x.id === currentFolderId;
+        })
+      ) {
+        currentFolderId = null;
+      }
+      if (!currentFolderId) {
+        currentFolderId = nnFirstOrderedFolderId();
+      }
+      nnOrderedRootFolderIds().forEach(function (rid) {
+        container.appendChild(nnBuildFolderBranch_(rid));
+      });
+      renderFilesMeet();
     }
 
     function selectFolderMeet(id) {
       currentFolderId = id;
       renderFolders();
-      renderFilesMeet();
     }
 
     function toggleSortOrderMeet() {
@@ -1129,23 +1595,60 @@
       if (!container) return;
       container.innerHTML = '';
       if (!currentFolderId) return;
-      var sortEl = document.getElementById('sort-type-meet');
-      var sortType = sortEl ? sortEl.value : 'updated';
-      var files = (treeData.files || []).filter(function (f) { return f.folderId === currentFolderId; });
-      files.sort(function (a, b) {
-        var valA = sortType === 'name' ? String(a.name || '').toLowerCase() : a[sortType];
-        var valB = sortType === 'name' ? String(b.name || '').toLowerCase() : b[sortType];
-        if (valA < valB) return -1 * sortOrderMeet;
-        if (valA > valB) return 1 * sortOrderMeet;
-        return 0;
+      var ids = nnOrderedFileIdsForFolder(currentFolderId);
+      var byId = {};
+      (treeData.files || []).forEach(function (f) {
+        byId[f.id] = f;
       });
-      if (files.length === 0) {
+      if (!ids.length) {
         container.innerHTML = '<div style="padding:10px;color:#888;">ファイルがありません</div>';
         return;
       }
-      files.forEach(function (f) {
+      ids.forEach(function (fid) {
+        var f = byId[fid];
+        if (!f) return;
         var div = document.createElement('div');
         div.className = 'file-item';
+        div.setAttribute('data-file-id', f.id);
+        div.draggable = true;
+        div.addEventListener('dragstart', function (ev) {
+          if (ev.target.closest && ev.target.closest('button')) {
+            ev.preventDefault();
+            return;
+          }
+          ev.dataTransfer.setData(
+            'text/plain',
+            JSON.stringify({ t: 'file', id: f.id, srcFolder: f.folderId, name: f.name })
+          );
+          ev.dataTransfer.effectAllowed = 'move';
+        });
+        div.addEventListener('dragover', function (ev) {
+          ev.preventDefault();
+          div.classList.add('drag-over');
+        });
+        div.addEventListener('dragleave', function () {
+          div.classList.remove('drag-over');
+        });
+        div.addEventListener('dragend', function () {
+          div.classList.remove('drag-over');
+        });
+        div.addEventListener('drop', function (ev) {
+          ev.preventDefault();
+          div.classList.remove('drag-over');
+          var raw = ev.dataTransfer.getData('text/plain');
+          var payload = null;
+          try {
+            payload = JSON.parse(raw);
+          } catch (e3) {
+            return;
+          }
+          if (!payload || payload.t !== 'file' || payload.srcFolder !== currentFolderId) return;
+          if (payload.id === f.id) return;
+          var z = nnFileDropZone(ev, div);
+          nnReorderFileInFolderPersist_(payload.id, f.id, z).catch(function (er) {
+            alert(er && er.message ? er.message : String(er));
+          });
+        });
         var nameEl = document.createElement('div');
         nameEl.className = 'file-name';
         nameEl.textContent = '📄 ' + (f.name || '');
@@ -1157,7 +1660,9 @@
         openBtn.type = 'button';
         openBtn.className = 'file-btn-meet';
         openBtn.textContent = '開く';
-        openBtn.onclick = function () { openFileFromHome(f.id, f.name); };
+        openBtn.onclick = function () {
+          openFileFromHome(f.id, f.name, f.folderId);
+        };
         meta.appendChild(dateSpan);
         meta.appendChild(openBtn);
         div.appendChild(nameEl);
@@ -1238,16 +1743,36 @@
       btnFavorite.innerHTML = isFav ? '⭐' : '☆';
     }
 
-    function openFileFromHome(id, name) {
-      legacyFolderNavActive = false;
+    function openFileFromHome(id, name, folderIdOpt) {
       if (currentFileId) {
         autoSaveCurrent(true);
         nnSnapshotGlobalsToSlot(nnActivePdfSlot);
       }
-      currentFileId = id;
-      fileName = name || 'document.pdf';
+      var treeRec = null;
+      var k;
+      var flist = treeData.files || [];
+      for (k = 0; k < flist.length; k++) {
+        if (flist[k].id === id) {
+          treeRec = flist[k];
+          break;
+        }
+      }
+      var effFolderId =
+        folderIdOpt !== undefined && folderIdOpt !== null ? folderIdOpt : treeRec ? treeRec.folderId : null;
+      var seamless = effFolderId && window.nnFolderViewModes[effFolderId] === 'seamless';
+
+      if (seamless && effFolderId) {
+        legacyFolderNavActive = true;
+        nnPopulateFileSelectFromFolder_(effFolderId, id);
+      } else {
+        legacyFolderNavActive = false;
+        fileSelect.innerHTML = '';
+        currentFileId = id;
+        fileName = name || 'document.pdf';
+      }
+
       try {
-        localStorage.setItem('last_opened_file', JSON.stringify({ id: id, name: fileName }));
+        localStorage.setItem('last_opened_file', JSON.stringify({ id: currentFileId, name: fileName }));
       } catch (e) {}
       updateFavoriteButtonStatus();
       homeScreen.style.display = 'none';
@@ -1261,6 +1786,7 @@
         pdfBtn.classList.add('active-mode');
       }
       loadSelectedFile(false, false);
+      nnUpdateLegacyToolsBarVisibility();
     }
 
     function applyRoleMeet() {
@@ -1336,40 +1862,6 @@
           redraw();
         })
         .catch(function () {});
-    }
-
-    function fetchFileList() {
-      var mode = folderSelect.value;
-      showLoader('ファイル一覧を取得中...');
-      legacyFolderNavActive = true;
-      nnRefreshCollaborationToolbar();
-      homeScreen.style.display = 'none';
-      viewerContainer.style.display = 'flex';
-      nnGasCall('getFileList', [mode])
-        .then(function (list) {
-          if (list && list.error) {
-            alert('エラー: ' + list.error);
-            hideLoader();
-            return;
-          }
-          if (!list || list.length === 0) {
-            fileSelect.innerHTML = '<option>ファイルなし</option>';
-            hideLoader();
-            return;
-          }
-          fileSelect.innerHTML = '';
-          list.forEach(function (file) {
-            var option = document.createElement('option');
-            option.value = file.id;
-            option.text = file.name;
-            fileSelect.appendChild(option);
-          });
-          loadSelectedFile(false, false, true);
-        })
-        .catch(function (err) {
-          alert(err && err.message ? err.message : '一覧の取得に失敗しました');
-          hideLoader();
-        });
     }
 
     function onFileDropdownChanged() {
@@ -2025,6 +2517,12 @@
         meta: 'key'
       });
 
+      let nnDragTaskSubgroupEl = null;
+      let nnDragChecklistUlEl = null;
+      let nnDragTaskId = null;
+      let nnDragCiTaskId = null;
+      let nnDragCiFIdx = null;
+
       function nnIsGas() {
         if (typeof google !== 'undefined' && google.script && google.script.run) return true;
         var u = typeof window.NN_GAS_EXEC_URL === 'string' ? window.NN_GAS_EXEC_URL.trim() : '';
@@ -2571,6 +3069,200 @@
         await nnUpdateSyncBadge();
       };
 
+      function nnDndZoneThirds_(ev, rowEl) {
+        const r = rowEl.getBoundingClientRect();
+        const y = ev.clientY - r.top;
+        const h = r.height || 1;
+        if (y < h * 0.25) return 'before';
+        if (y > h * 0.75) return 'after';
+        return 'inside';
+      }
+
+      async function nnReorderTasksInSubgroup_(subgroupEl, dragId, targetId, zone) {
+        const cards = Array.from(subgroupEl.querySelectorAll('.nn-task-card[data-task-id]'));
+        const ids = cards.map(function (c) {
+          return c.getAttribute('data-task-id');
+        });
+        const dragIdx = ids.indexOf(dragId);
+        const tgtIdx = ids.indexOf(targetId);
+        if (dragIdx < 0 || tgtIdx < 0 || dragId === targetId) return;
+        const without = ids.filter(function (id) {
+          return id !== dragId;
+        });
+        let tgtInArr = tgtIdx;
+        if (dragIdx < tgtIdx) tgtInArr = tgtIdx - 1;
+        let insertAt = zone === 'before' ? tgtInArr : tgtInArr + 1;
+        const newOrder = without.slice(0, insertAt).concat([dragId]).concat(without.slice(insertAt));
+        const base = 1024;
+        const step = 256;
+        let i;
+        for (i = 0; i < newOrder.length; i++) {
+          const task = await nnDb.tasks.get(newOrder[i]);
+          if (!task) continue;
+          const norm = nnNormalizeTask(task);
+          norm.sortOrder = base + i * step;
+          await nnDb.tasks.put(norm);
+          await nnQueueOp({ type: 'upsert', task: norm });
+        }
+        await nnRecomputeFpFromDb();
+        await nnRenderTaskList();
+      }
+
+      async function nnReorderCheckItemsFiltered_(taskId, dragFIdx, tgtFIdx, zone) {
+        const row = await nnDb.tasks.get(taskId);
+        if (!row) return;
+        const next = nnNormalizeTask(row);
+        const all = nnNormalizeCheckItems(next.checkItems);
+        const withText = all.filter(function (ci) {
+          return (ci.text || '').trim();
+        });
+        if (
+          dragFIdx < 0 ||
+          tgtFIdx < 0 ||
+          dragFIdx >= withText.length ||
+          tgtFIdx >= withText.length ||
+          dragFIdx === tgtFIdx
+        )
+          return;
+        const dragObj = withText[dragFIdx];
+        const arr = withText.filter(function (_, i) {
+          return i !== dragFIdx;
+        });
+        let tgtInArr = tgtFIdx;
+        if (dragFIdx < tgtFIdx) tgtInArr = tgtFIdx - 1;
+        const insertAt = zone === 'before' ? tgtInArr : tgtInArr + 1;
+        arr.splice(insertAt, 0, dragObj);
+        const noText = all.filter(function (ci) {
+          return !(ci.text || '').trim();
+        });
+        next.checkItems = arr.concat(noText);
+        nnEnsureCheckItemIds(next);
+        await nnDb.tasks.put(next);
+        await nnQueueOp({ type: 'upsert', task: next });
+        await nnRecomputeFpFromDb();
+        await nnRenderTaskList();
+      }
+
+      function nnWireChecklistPreviewDnD_(ul, taskId) {
+        ul.querySelectorAll('li.nn-ci-dnd').forEach(function (li) {
+          li.addEventListener('dragstart', function (ev) {
+            if (ev.target.closest && ev.target.closest('input[type="checkbox"]')) {
+              ev.preventDefault();
+              return;
+            }
+            nnDragChecklistUlEl = ul;
+            nnDragCiTaskId = taskId;
+            nnDragCiFIdx = parseInt(li.getAttribute('data-ci-idx'), 10);
+            ev.dataTransfer.setData(
+              'text/plain',
+              JSON.stringify({ k: 'nn-ci', taskId: taskId, fIdx: nnDragCiFIdx })
+            );
+            ev.dataTransfer.effectAllowed = 'move';
+            li.classList.add('dragging');
+          });
+          li.addEventListener('dragend', function () {
+            li.classList.remove('dragging');
+            ul.querySelectorAll('li.nn-ci-dnd').forEach(function (x) {
+              x.classList.remove('drag-over');
+            });
+            nnDragChecklistUlEl = null;
+            nnDragCiTaskId = null;
+            nnDragCiFIdx = null;
+          });
+          li.addEventListener('dragover', function (ev) {
+            ev.preventDefault();
+            if (nnDragChecklistUlEl !== ul || nnDragCiTaskId !== taskId) return;
+            if (nnDragCiFIdx === null || isNaN(nnDragCiFIdx)) return;
+            li.classList.add('drag-over');
+          });
+          li.addEventListener('dragleave', function () {
+            li.classList.remove('drag-over');
+          });
+          li.addEventListener('drop', function (ev) {
+            ev.preventDefault();
+            li.classList.remove('drag-over');
+            let raw = ev.dataTransfer.getData('text/plain');
+            let payload = null;
+            try {
+              payload = JSON.parse(raw);
+            } catch (e2) {
+              return;
+            }
+            if (!payload || payload.k !== 'nn-ci' || payload.taskId !== taskId) return;
+            if (nnDragChecklistUlEl !== ul) return;
+            const tgtF = parseInt(li.getAttribute('data-ci-idx'), 10);
+            let dragF = payload.fIdx;
+            if (dragF === undefined || dragF === null || isNaN(parseInt(dragF, 10))) dragF = nnDragCiFIdx;
+            dragF = parseInt(dragF, 10);
+            if (isNaN(tgtF) || isNaN(dragF)) return;
+            let zone = nnDndZoneThirds_(ev, li);
+            if (zone === 'inside') zone = 'before';
+            nnReorderCheckItemsFiltered_(taskId, dragF, tgtF, zone).catch(function (err) {
+              console.error(err);
+              alert(err && err.message ? err.message : String(err));
+            });
+          });
+        });
+      }
+
+      function nnWireTaskCardDnD_(card, taskId, subgroupEl) {
+        card.setAttribute('data-task-id', taskId);
+        card.classList.add('nn-task-dnd-source');
+        card.setAttribute('draggable', 'true');
+        card.addEventListener('dragstart', function (ev) {
+          if (
+            ev.target.closest &&
+            ev.target.closest(
+              'button, .nn-task-actions, [data-nn-check], .nn-checklist-preview, .nn-checklist-preview input'
+            )
+          ) {
+            ev.preventDefault();
+            return;
+          }
+          nnDragTaskSubgroupEl = subgroupEl;
+          nnDragTaskId = taskId;
+          ev.dataTransfer.setData('text/plain', JSON.stringify({ k: 'nn-task', id: taskId }));
+          ev.dataTransfer.effectAllowed = 'move';
+        });
+        card.addEventListener('dragend', function () {
+          subgroupEl.querySelectorAll('.nn-task-card').forEach(function (c) {
+            c.classList.remove('drag-over');
+          });
+          nnDragTaskSubgroupEl = null;
+          nnDragTaskId = null;
+        });
+        card.addEventListener('dragover', function (ev) {
+          ev.preventDefault();
+          if (!nnDragTaskId || nnDragTaskSubgroupEl !== subgroupEl) return;
+          if (nnDragTaskId === taskId) return;
+          card.classList.add('drag-over');
+        });
+        card.addEventListener('dragleave', function () {
+          card.classList.remove('drag-over');
+        });
+        card.addEventListener('drop', function (ev) {
+          ev.preventDefault();
+          card.classList.remove('drag-over');
+          let payload = null;
+          try {
+            payload = JSON.parse(ev.dataTransfer.getData('text/plain'));
+          } catch (e5) {
+            return;
+          }
+          if (!payload || payload.k !== 'nn-task') return;
+          if (nnDragTaskSubgroupEl !== subgroupEl) return;
+          const dragId = payload.id;
+          const targetId = taskId;
+          if (dragId === targetId) return;
+          let zone = nnDndZoneThirds_(ev, card);
+          if (zone === 'inside') zone = 'before';
+          nnReorderTasksInSubgroup_(subgroupEl, dragId, targetId, zone).catch(function (err) {
+            console.error(err);
+            alert(err && err.message ? err.message : String(err));
+          });
+        });
+      }
+
       async function nnRecomputeFpFromDb() {
         const all = await nnDb.tasks.toArray();
         window.nnFpAtLastRender = nnFingerprintTasks(all);
@@ -2603,10 +3295,12 @@
           return (a.sortOrder || 0) - (b.sortOrder || 0);
         });
 
-        function appendTaskCard(t, isStaged) {
+        function appendTaskCard(t, isStaged, parentEl) {
           const card = document.createElement('div');
           card.className = 'nn-task-card' + (t.status !== 'active' ? ' done' : '');
           if (isStaged) card.style.opacity = '0.92';
+          card.title =
+            'タイトル・メタ情報あたりをつかんでドラッグすると、このグループ内で並べ替えられます（ボタン・完了チェック・サブ項目以外）。';
           const done = t.status === 'completed' || t.status === 'canceled';
           const canceled = t.status === 'canceled';
           card.innerHTML =
@@ -2650,12 +3344,17 @@
             }).length;
             const prog = document.createElement('div');
             prog.className = 'nn-check-progress';
-            prog.textContent = 'チェック ' + doneN + '/' + itemsRaw.length;
+            prog.textContent =
+              'チェック ' + doneN + '/' + itemsRaw.length + '（行をドラッグで並べ替え・チェックボックスはクリックのみ）';
             body.appendChild(prog);
             const ul = document.createElement('ul');
             ul.className = 'nn-checklist-preview';
             itemsRaw.forEach(function (ci, idx) {
               const li = document.createElement('li');
+              li.className = 'nn-ci-dnd';
+              li.setAttribute('draggable', 'true');
+              li.setAttribute('data-ci-idx', String(idx));
+              li.title = 'チェック以外の行をドラッグすると順序を変えられます';
               const label = document.createElement('label');
               const inp = document.createElement('input');
               inp.type = 'checkbox';
@@ -2677,6 +3376,7 @@
               ul.appendChild(li);
             });
             body.appendChild(ul);
+            nnWireChecklistPreviewDnD_(ul, t.id);
           }
           const chk = card.querySelector('[data-nn-check]');
           chk.addEventListener('change', function () {
@@ -2688,7 +3388,8 @@
           card.querySelector('[data-nn-del]').addEventListener('click', function () {
             nnDeleteTask(t.id);
           });
-          host.appendChild(card);
+          parentEl.appendChild(card);
+          nnWireTaskCardDnD_(card, t.id, parentEl);
         }
 
         host.innerHTML = '';
@@ -2701,8 +3402,11 @@
           sub.className = 'nn-group-title';
           sub.textContent = '期限の N 日前より、上のバケットへ移ります';
           host.appendChild(sub);
+          const stagedWrap = document.createElement('div');
+          stagedWrap.className = 'nn-task-subgroup-items nn-task-staged-items';
+          host.appendChild(stagedWrap);
           staged.forEach(function (t) {
-            appendTaskCard(t, true);
+            appendTaskCard(t, true, stagedWrap);
           });
         }
 
@@ -2778,8 +3482,11 @@
             th.className = 'nn-group-title';
             th.textContent = sg.key;
             host.appendChild(th);
+            const itemHost = document.createElement('div');
+            itemHost.className = 'nn-task-subgroup-items';
+            host.appendChild(itemHost);
             sg.items.forEach(function (t) {
-              appendTaskCard(t, false);
+              appendTaskCard(t, false, itemHost);
             });
           });
         });
