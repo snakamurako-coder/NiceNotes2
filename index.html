@@ -542,6 +542,8 @@
     window.NN_GOOGLE_ACCESS_TOKEN = '';
     window.NN_GOOGLE_ACCESS_EXPIRES_AT = 0;
     window.__nnOauthClient = null;
+    /** 同時に複数 nnGasCall が走っても OAuth ポップアップは1回だけ */
+    window.__nnOauthTokenPromise = null;
     var NN_OAUTH_BOOTSTRAP_KEY = 'nn_oauth_bootstrap_until';
     var NN_OAUTH_BOOTSTRAP_DAYS = 30;
 
@@ -590,12 +592,17 @@
       });
       return window.__nnOauthClient;
     }
-    async function nnEnsureGoogleAccessToken() {
-      if (window.NN_GOOGLE_ACCESS_TOKEN && Date.now() < Number(window.NN_GOOGLE_ACCESS_EXPIRES_AT || 0)) {
-        return window.NN_GOOGLE_ACCESS_TOKEN;
-      }
+    function nnOauthRetryable_(err) {
+      var m = err && err.message ? String(err.message) : String(err || '');
+      if (/popup_closed_by_user|access_denied|user_cancel/i.test(m)) return false;
+      if (/interaction_required|login_required|invalid_grant|session_expired/i.test(m)) return true;
+      return false;
+    }
+
+    async function nnFetchNewAccessTokenOnce_() {
       var client = nnEnsureOauthClient();
-      function requestToken(promptMode) {
+      function requestToken(opts) {
+        opts = opts || {};
         return new Promise(function (resolve, reject) {
           client.callback = function (resp) {
             if (resp && resp.access_token) {
@@ -608,19 +615,38 @@
             reject(new Error(resp && resp.error ? String(resp.error) : 'OAuth token error'));
           };
           try {
-            client.requestAccessToken({ prompt: promptMode });
+            client.requestAccessToken(opts);
           } catch (e) {
             reject(e instanceof Error ? e : new Error(String(e)));
           }
         });
       }
+      var firstPrompt = nnOauthBootstrapped() ? undefined : 'consent';
       try {
-        return await requestToken(nnOauthBootstrapped() ? '' : 'consent');
-      } catch (e) {
-        var t = await requestToken('consent');
+        await requestToken(firstPrompt !== undefined ? { prompt: firstPrompt } : {});
         nnMarkOauthBootstrapped();
-        return t;
+        return window.NN_GOOGLE_ACCESS_TOKEN;
+      } catch (e1) {
+        if (nnOauthRetryable_(e1)) {
+          await requestToken({ prompt: 'consent' });
+          nnMarkOauthBootstrapped();
+          return window.NN_GOOGLE_ACCESS_TOKEN;
+        }
+        throw e1;
       }
+    }
+
+    async function nnEnsureGoogleAccessToken() {
+      if (window.NN_GOOGLE_ACCESS_TOKEN && Date.now() < Number(window.NN_GOOGLE_ACCESS_EXPIRES_AT || 0)) {
+        return window.NN_GOOGLE_ACCESS_TOKEN;
+      }
+      if (window.__nnOauthTokenPromise) {
+        return window.__nnOauthTokenPromise;
+      }
+      window.__nnOauthTokenPromise = nnFetchNewAccessTokenOnce_().finally(function () {
+        window.__nnOauthTokenPromise = null;
+      });
+      return window.__nnOauthTokenPromise;
     }
     /** google.script.run または Pages 向け POST API */
     async function nnGasCall(action, args) {
