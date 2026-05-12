@@ -6,9 +6,41 @@ function doGet() {
 
 /** Script Properties: NICENOTES_PAGES_API_TOKEN と同一の値をクライアントに設定すること */
 var NN_PAGES_API_TOKEN_PROP = 'NICENOTES_PAGES_API_TOKEN';
+/** Script Properties: ユーザー別トークンを改行またはカンマ区切りで列挙 */
+var NN_PAGES_API_TOKEN_ALLOWLIST_PROP = 'NICENOTES_PAGES_API_TOKEN_ALLOWLIST';
 
 function nn_pagesApiJsonOut_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * 改行/カンマ/セミコロン区切りのトークン文字列を配列化する。
+ * @param {string} raw
+ * @return {string[]}
+ */
+function nn_pagesTokenList_(raw) {
+  return String(raw || '')
+    .split(/[\n,;]+/)
+    .map(function (s) { return String(s || '').trim(); })
+    .filter(function (s) { return !!s; });
+}
+
+/**
+ * 既存単一トークン + allowlist のどちらかに一致すれば認可。
+ * @param {string} presented
+ * @return {boolean}
+ */
+function nn_isAuthorizedPagesToken_(presented) {
+  const props = PropertiesService.getScriptProperties();
+  const token = String(presented || '');
+  if (!token) return false;
+
+  const legacy = String(props.getProperty(NN_PAGES_API_TOKEN_PROP) || '');
+  if (legacy && token === legacy) return true;
+
+  const allowlistRaw = props.getProperty(NN_PAGES_API_TOKEN_ALLOWLIST_PROP);
+  const allowlist = nn_pagesTokenList_(allowlistRaw);
+  return allowlist.indexOf(token) >= 0;
 }
 
 /**
@@ -32,9 +64,11 @@ function doPost(e) {
       return nn_pagesApiJsonOut_({ ok: false, error: 'Invalid JSON body' });
     }
 
-    var expected = PropertiesService.getScriptProperties().getProperty(NN_PAGES_API_TOKEN_PROP);
-    if (!expected || String(body.token || '') !== String(expected)) {
-      return nn_pagesApiJsonOut_({ ok: false, error: 'Unauthorized' });
+    if (!nn_isAuthorizedPagesToken_(body.token)) {
+      return nn_pagesApiJsonOut_({
+        ok: false,
+        error: 'Unauthorized: API token is not allowlisted',
+      });
     }
 
     const action = body.action;
