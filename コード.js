@@ -4,10 +4,6 @@ function doGet() {
     .setTitle('NiceNotes · 会議資料ワークスペース');
 }
 
-/** Script Properties: NICENOTES_PAGES_API_TOKEN と同一の値をクライアントに設定すること */
-var NN_PAGES_API_TOKEN_PROP = 'NICENOTES_PAGES_API_TOKEN';
-/** Script Properties: ユーザー別トークンを改行またはカンマ区切りで列挙 */
-var NN_PAGES_API_TOKEN_ALLOWLIST_PROP = 'NICENOTES_PAGES_API_TOKEN_ALLOWLIST';
 /** Script Properties: 許可メール（改行/カンマ/セミコロン区切り） */
 var NN_PAGES_ALLOWED_EMAILS_PROP = 'NICENOTES_PAGES_ALLOWED_EMAILS';
 /** Script Properties: Google OAuth クライアントID（任意） */
@@ -124,28 +120,10 @@ function nn_validateSession_(sessionToken) {
 }
 
 /**
- * 既存単一トークン + allowlist のどちらかに一致すれば認可。
- * @param {string} presented
- * @return {boolean}
- */
-function nn_isAuthorizedPagesToken_(presented) {
-  const props = PropertiesService.getScriptProperties();
-  const token = String(presented || '');
-  if (!token) return false;
-
-  const legacy = String(props.getProperty(NN_PAGES_API_TOKEN_PROP) || '');
-  if (legacy && token === legacy) return true;
-
-  const allowlistRaw = props.getProperty(NN_PAGES_API_TOKEN_ALLOWLIST_PROP);
-  const allowlist = nn_pagesTokenList_(allowlistRaw);
-  return allowlist.indexOf(token) >= 0;
-}
-
-/**
  * GitHub Pages 等（別オリジン）からの呼び出し用 JSON API。
  * ブラウザの CORS プリフライトを避けるため、クライアントは Content-Type: text/plain で JSON を送る。
  *
- * POST body JSON: `{ "token": string, "action": string, "args": any[], "idToken"?: string, "sessionToken"?: string }`
+ * POST body JSON: `{ "action": string, "args": any[], "idToken"?: string, "sessionToken"?: string }`
  * 応答: `{ "ok": true, "result": ... }` または `{ "ok": false, "error": string }`
  */
 function doPost(e) {
@@ -154,19 +132,12 @@ function doPost(e) {
     if (e && e.postData && typeof e.postData.contents === 'string') raw = e.postData.contents;
     else raw = '{}';
 
-    /** @type {{ token?: string, idToken?: string, sessionToken?: string, action?: string, args?: unknown }} */
+    /** @type {{ idToken?: string, sessionToken?: string, action?: string, args?: unknown }} */
     let body;
     try {
       body = JSON.parse(raw || '{}');
     } catch (parseErr) {
       return nn_pagesApiJsonOut_({ ok: false, error: 'Invalid JSON body' });
-    }
-
-    if (!nn_isAuthorizedPagesToken_(body.token)) {
-      return nn_pagesApiJsonOut_({
-        ok: false,
-        error: 'Unauthorized: API token is not allowlisted',
-      });
     }
 
     const idt = nn_verifyGoogleIdToken_(body.idToken);
