@@ -180,26 +180,68 @@ function recognizeSentence(allStrokes) {
 
 // =============================================================================
 // 職員会議ワークスペース（Drive ツリー・資料同期・手書き共有）
-// google.script.run で index.html から呼び出す。ScriptProperties キーは元アプリ互換。
+// google.script.run で index.html から呼び出す。
+// MAIN_FOLDER_ID はユーザー別 UserProperties。ScriptProperties の値は移行用（作成者のみ）。
 // =============================================================================
 
-function initializeApp() {
-  const props = PropertiesService.getScriptProperties();
-  let mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+/** @return {boolean} 現在の実行ユーザーが Apps Script プロジェクトの所有者（アプリ作成者）か */
+function nn_isScriptOwnerUser_() {
+  try {
+    const ownerEmail = DriveApp.getFileById(ScriptApp.getScriptId()).getOwner().getEmail();
+    const me =
+      Session.getEffectiveUser().getEmail() ||
+      Session.getActiveUser().getEmail() ||
+      '';
+    if (!ownerEmail || !me) return false;
+    return ownerEmail.toLowerCase() === me.toLowerCase();
+  } catch (e) {
+    return false;
+  }
+}
 
-  if (!mainFolderId) {
-    try {
+/**
+ * 会議ワークスペースのルート（管理フォルダ）ID。
+ * 初回は initializeApp が UserProperties に設定する。旧 ScriptProperties は作成者のみ引き継ぎ。
+ * @return {string} 未設定時は空文字
+ */
+function nn_getMainFolderId_() {
+  const userProps = PropertiesService.getUserProperties();
+  let id = userProps.getProperty('MAIN_FOLDER_ID');
+  if (id) return id;
+  const legacy = PropertiesService.getScriptProperties().getProperty('MAIN_FOLDER_ID');
+  if (legacy && nn_isScriptOwnerUser_()) {
+    userProps.setProperty('MAIN_FOLDER_ID', legacy);
+    return legacy;
+  }
+  return '';
+}
+
+function initializeApp() {
+  const userProps = PropertiesService.getUserProperties();
+  if (userProps.getProperty('MAIN_FOLDER_ID')) {
+    return { success: true };
+  }
+  const scriptProps = PropertiesService.getScriptProperties();
+  const legacy = scriptProps.getProperty('MAIN_FOLDER_ID');
+  if (legacy && nn_isScriptOwnerUser_()) {
+    userProps.setProperty('MAIN_FOLDER_ID', legacy);
+    return { success: true };
+  }
+  try {
+    let parentFolder;
+    if (nn_isScriptOwnerUser_()) {
       const scriptId = ScriptApp.getScriptId();
       const parents = DriveApp.getFileById(scriptId).getParents();
-      const parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
-      const newFolder = parentFolder.createFolder('会議資料_Workspace');
-      mainFolderId = newFolder.getId();
-      props.setProperty('MAIN_FOLDER_ID', mainFolderId);
-    } catch (e) {
-      return { success: false, error: '初期化に失敗しました: ' + e.toString() };
+      parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+    } else {
+      parentFolder = DriveApp.getRootFolder();
     }
+    const newFolder = parentFolder.createFolder('会議資料_Workspace');
+    userProps.setProperty('MAIN_FOLDER_ID', newFolder.getId());
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: '初期化に失敗しました: ' + e.toString() };
   }
-  return { success: true };
 }
 
 /**
@@ -211,8 +253,7 @@ function initializeApp() {
  */
 function nnSaveCaptureToDrive(base64, mimeType, fileName) {
   try {
-    const props = PropertiesService.getScriptProperties();
-    const mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+    const mainFolderId = nn_getMainFolderId_();
     if (!mainFolderId) {
       return { success: false, error: 'MAIN_FOLDER_ID がありません。' };
     }
@@ -262,8 +303,10 @@ function registerFolder(inputData, isOrg) {
 function importPdf(inputData) {
   const id = extractIdFromUrl(inputData);
   try {
-    const props = PropertiesService.getScriptProperties();
-    const mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+    const mainFolderId = nn_getMainFolderId_();
+    if (!mainFolderId) {
+      return { success: false, error: 'ワークスペースが未初期化です。ページを再読み込みしてください。' };
+    }
     const mainFolder = DriveApp.getFolderById(mainFolderId);
 
     const originalFile = DriveApp.getFileById(id);
@@ -321,7 +364,7 @@ function getFolderTree(forceRefresh) {
 
   const props = PropertiesService.getScriptProperties();
   let roots = [];
-  const mainId = props.getProperty('MAIN_FOLDER_ID');
+  const mainId = nn_getMainFolderId_();
   if (mainId) roots.push(mainId);
   const registeredStr = props.getProperty('REGISTERED_FOLDERS');
   if (registeredStr) roots = roots.concat(JSON.parse(registeredStr));
