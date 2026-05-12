@@ -359,6 +359,7 @@
           <label><input type="radio" name="folder-type" value="personal" checked> 個人フォルダ（自分だけが見る）</label>
           <label><input type="radio" name="folder-type" value="org"> 組織/共有フォルダ（他者から共有されたもの）</label>
         </div>
+        <p style="font-size:12px;color:#80868b;margin:8px 0 0;line-height:1.4;">ここから追加したフォルダでホームから資料を開いたときのみ、発表者／参加者のリアルタイム共有が使えます。論理ページの複製追加は一覧モードのみ将来対応予定です（会議ワークスペースでは行いません）。</p>
         <div style="text-align:right; margin-top:20px;">
           <button type="button" class="file-btn-meet" onclick="closeAddModal()">キャンセル</button>
           <button type="button" class="btn-meeting-action" onclick="submitAddFolder()">登録する</button>
@@ -425,10 +426,11 @@
     <div class="tool-group">
       <button type="button" style="background:#e8eaed; border:none; font-weight:bold;" onclick="showHomeMeet()">🏠 ホーム</button>
       <button type="button" id="btn-favorite" onclick="toggleFavoriteMeet()" style="background:transparent; border:none; font-size:18px;" title="お気に入り登録">☆</button>
-      <select id="role-select" onchange="applyRoleMeet()">
-        <option value="participant">📝 個人メモ（自分だけに見える）</option>
-        <option value="presenter">📢 発表者（全員に共有される）</option>
+      <select id="role-select" onchange="applyRoleMeet()" title="">
+        <option value="participant">📝 個人メモ（会議モードのみ／自分のレイヤー）</option>
+        <option value="presenter">📢 発表者（会議モードのみ／共有レイヤー・同期）</option>
       </select>
+      <span id="legacy-collab-disabled-hint" style="display:none;font-size:11px;color:#5f6368;max-width:160px;line-height:1.35;margin-left:6px;">一覧モードでは共有同期・発表者役割は利用できません</span>
     </div>
     <div class="tool-group" id="pdf-legacy-tools">
       <select id="folder-select" onchange="fetchFileList()">
@@ -690,8 +692,32 @@
       }
     }
 
-    window.onload = function () {
+    /** ホームのワークスペースから開いた資料のみ（一覧モードでは無効） */
+    function nnMeetingRealtimeCollaborationActive() {
+      return !legacyFolderNavActive;
+    }
+
+    /** 論理ページ複製（書込レイヤのみ）は一覧モードのみ想定。会議ワークスペースでは無効（組織フォルダ運用と整合） */
+    function nnVirtualPageDupFeatureAllowed() {
+      return legacyFolderNavActive;
+    }
+    window.nnVirtualPageDupFeatureAllowed = nnVirtualPageDupFeatureAllowed;
+
+    function nnRefreshCollaborationToolbar() {
+      var active = nnMeetingRealtimeCollaborationActive();
+      var hint = document.getElementById('legacy-collab-disabled-hint');
+      if (hint) hint.style.display = active ? 'none' : 'inline-block';
+      roleSelect.disabled = !active;
+      roleSelect.style.opacity = active ? '1' : '0.55';
+      roleSelect.style.cursor = active ? '' : 'not-allowed';
+      roleSelect.title = active
+        ? 'ホームの会議ワークスペースで開いたときのみリアルタイム共有が有効です'
+        : '上部のフォルダ一覧から開いているためリアルタイム共有・発表者役割は無効です';
       applyRoleMeet();
+    }
+
+    window.onload = function () {
+      nnRefreshCollaborationToolbar();
       showLoader('システムを初期設定中...');
       nnGasCall('initializeApp', [])
         .then(function (res) {
@@ -817,7 +843,7 @@
       if (!currentFileId) return;
       homeScreen.style.display = 'none';
       viewerContainer.style.display = 'block';
-      applyRoleMeet();
+      nnRefreshCollaborationToolbar();
     }
 
     function loadFolderTree(forceRefresh) {
@@ -1026,17 +1052,21 @@
       roleSelect.className = 'role-' + currentUserRole;
       drawCanvas.style.pointerEvents = 'auto';
       hostFrame.style.display = 'none';
+      if (!nnMeetingRealtimeCollaborationActive()) {
+        statusDiv.textContent = '📄 一覧モード（リアルタイム共有オフ／個人レイヤーのみ）';
+        return;
+      }
       if (currentUserRole === 'presenter') {
-        statusDiv.textContent = '📢 共有モード';
+        statusDiv.textContent = '📢 発表者（共有レイヤー・リアルタイム同期）';
         syncIntervalTimer = setInterval(pushMeetingState, 2000);
       } else {
-        statusDiv.textContent = '📝 個人メモモード';
+        statusDiv.textContent = '📝 個人メモ（自分のレイヤー／発表に追従）';
         syncIntervalTimer = setInterval(pullMeetingState, 2500);
       }
     }
 
     function pushMeetingState() {
-      if (!currentFileId) return;
+      if (!nnMeetingRealtimeCollaborationActive() || !currentFileId) return;
       var state = {
         fileId: currentFileId,
         fileName: fileName,
@@ -1051,6 +1081,7 @@
     }
 
     function pullMeetingState() {
+      if (!nnMeetingRealtimeCollaborationActive()) return;
       nnGasCall('getMeetingState', [])
         .then(function (res) {
           if (!res) return;
@@ -1093,6 +1124,7 @@
       var mode = folderSelect.value;
       showLoader('ファイル一覧を取得中...');
       legacyFolderNavActive = true;
+      nnRefreshCollaborationToolbar();
       homeScreen.style.display = 'none';
       viewerContainer.style.display = 'block';
       nnGasCall('getFileList', [mode])
@@ -1138,7 +1170,7 @@
     function autoSaveCurrent(silent) {
       if (!currentFileId || !fileName) return;
       var baseName = fileName.replace(/\.[^/.]+$/, '');
-      if (currentUserRole === 'presenter') {
+      if (nnMeetingRealtimeCollaborationActive() && currentUserRole === 'presenter') {
         if (!nnHasAnyStrokes(sharedStrokesByPage)) return;
         var json = JSON.stringify(sharedStrokesByPage);
         if (!silent) statusDiv.textContent = '保存中...';
@@ -1165,7 +1197,10 @@
       if (fromDropdown) {
         legacyFolderNavActive = true;
         currentFileId = fileSelect.value;
-        if (!currentFileId) return;
+        if (!currentFileId) {
+          nnRefreshCollaborationToolbar();
+          return;
+        }
         fileName = fileSelect.options[fileSelect.selectedIndex].text;
       } else if (!currentFileId) {
         return;
@@ -1222,7 +1257,7 @@
               renderPage(currentPageNum);
               hideLoader();
               updateFavoriteButtonStatus();
-              applyRoleMeet();
+              nnRefreshCollaborationToolbar();
             } catch (err) {
               console.error(err);
               alert('読み込み失敗: ' + err.message);
@@ -1307,7 +1342,7 @@
           renderPage(currentPageNum);
           hideLoader();
           updateFavoriteButtonStatus();
-          applyRoleMeet();
+          nnRefreshCollaborationToolbar();
         } catch (err) {
           console.error(err);
           alert('読み込み失敗: ' + err.message);
@@ -1498,7 +1533,7 @@
     }
 
     function getTargetStrokesArray() {
-      if (currentUserRole === 'presenter') {
+      if (nnMeetingRealtimeCollaborationActive() && currentUserRole === 'presenter') {
         if (!sharedStrokesByPage[currentPageNum]) sharedStrokesByPage[currentPageNum] = [];
         return sharedStrokesByPage[currentPageNum];
       }
@@ -1583,7 +1618,7 @@
       const filterFn = function (stroke) {
         return !stroke.points.some(function (p) { return Math.hypot(p.x - point.x, p.y - point.y) < threshold; });
       };
-      if (currentUserRole === 'presenter') {
+      if (nnMeetingRealtimeCollaborationActive() && currentUserRole === 'presenter') {
         sharedStrokesByPage[currentPageNum] = (sharedStrokesByPage[currentPageNum] || []).filter(filterFn);
       } else {
         localStrokesByPage[currentPageNum] = (localStrokesByPage[currentPageNum] || []).filter(filterFn);
@@ -1736,7 +1771,7 @@
           viewer.style.display = 'none';
         } else {
           viewer.style.display = 'block';
-          if (currentFileId) applyRoleMeet();
+          if (currentFileId) nnRefreshCollaborationToolbar();
         }
       }
     }
