@@ -1,7 +1,7 @@
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
-    .setTitle('NiceNotes · 会議資料ワークスペース');
+    .setTitle('NiceNotes2 · 会議資料ワークスペース');
 }
 
 /** Script Properties: NICENOTES_PAGES_API_TOKEN と同一の値をクライアントに設定すること */
@@ -236,7 +236,7 @@ function initializeApp() {
     } else {
       parentFolder = DriveApp.getRootFolder();
     }
-    const newFolder = parentFolder.createFolder('会議資料_Workspace');
+    const newFolder = parentFolder.createFolder('MyNiceNotes');
     userProps.setProperty('MAIN_FOLDER_ID', newFolder.getId());
     return { success: true };
   } catch (e) {
@@ -477,7 +477,8 @@ function getMeetingState() {
  * @property {?string} completedAt          ISO 8601 or null
  * @property {string} googleTaskId          N 列。サーバ管理。Google Tasks の task id。
  * @property {string} calendarEventId       O 列。サーバ管理。Calendar イベント id。
- * @property {string} repeatRule            P 列。繰り返し: 空/none/daily/weekly/monthly/yearly。
+ * @property {string} repeatRule            P 列。繰り返し: 空/none/daily/weekly/monthly/yearly または JSON。
+ * @property {?number=} visibleLeadDays     Q 列。期限の何日前から一覧に表示するか（空=制限なし）。
  */
 
 /**
@@ -489,11 +490,11 @@ const NN_PROP_SHEET_ID = 'NICENOTES_SHEET_ID';
 const NN_PROP_TASKLIST_ID = 'NICENOTES_TASKLIST_ID';
 const NN_PROP_TASKLIST_MAP = 'NICENOTES_TASKLIST_MAP';
 const NN_PROP_CALENDAR_ID = 'NICENOTES_CALENDAR_ID';
-const NN_TASKLIST_TITLE = 'NiceNotes';
-const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes · ';
-const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes · 未分類';
+const NN_TASKLIST_TITLE = 'NiceNotes2';
+const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes2 · ';
+const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes2 · 未分類';
 const NN_TASKLIST_TITLE_MAX = 200;
-const NN_CALENDAR_NAME = 'NiceNotes';
+const NN_CALENDAR_NAME = 'NiceNotes2';
 const NN_LOCK_TIMEOUT_MS = 10000;
 
 /**
@@ -502,7 +503,7 @@ const NN_LOCK_TIMEOUT_MS = 10000;
  */
 function nn_editorSampleTask_() {
   return {
-    title: 'NiceNotes test',
+    title: 'NiceNotes2 test',
     status: 'active',
     dueDate: '2026-05-20',
     startDate: '',
@@ -516,7 +517,8 @@ function nn_editorSampleTask_() {
     completedAt: null,
     googleTaskId: '',
     calendarEventId: '',
-    repeatRule: ''
+    repeatRule: '',
+    visibleLeadDays: null
   };
 }
 
@@ -540,7 +542,8 @@ const NN_COLUMNS = [
   'completedAt',     // M  ISO 8601 or 空
   'googleTaskId',    // N  Google Tasks API task id（サーバ管理）
   'calendarEventId', // O  Calendar イベント id（サーバ管理）
-  'repeatRule'       // P  繰り返し（Google Tasks recurrence / アプリ内ルーティーン）
+  'repeatRule',       // P  繰り返し（Google Tasks recurrence / アプリ内ルーティーン / JSON）
+  'visibleLeadDays'   // Q  期限の N 日前から表示（空=すぐ表示）
 ];
 
 const NN_STATUS_VALUES = ['active', 'completed', 'canceled'];
@@ -559,7 +562,7 @@ function nn_initSpreadsheet() {
   if (id) {
     ss = SpreadsheetApp.openById(id);
   } else {
-    ss = SpreadsheetApp.create('NiceNotes Master');
+    ss = SpreadsheetApp.create('NiceNotes2 Master');
     id = ss.getId();
     props.setProperty(NN_PROP_SHEET_ID, id);
   }
@@ -609,7 +612,7 @@ function nn_initSpreadsheet() {
     sheet.getRange(2, c, dataRowCount, 1).setNumberFormat('yyyy-mm-dd');
   });
 
-  ['updatedAt', 'completedAt', 'googleTaskId', 'calendarEventId', 'repeatRule'].forEach(function (name) {
+  ['updatedAt', 'completedAt', 'googleTaskId', 'calendarEventId', 'repeatRule', 'visibleLeadDays'].forEach(function (name) {
     const c = NN_COLUMNS.indexOf(name) + 1;
     sheet.getRange(2, c, dataRowCount, 1).setNumberFormat('@');
   });
@@ -617,10 +620,13 @@ function nn_initSpreadsheet() {
   const sortCol = NN_COLUMNS.indexOf('sortOrder') + 1;
   sheet.getRange(2, sortCol, dataRowCount, 1).setNumberFormat('0');
 
+  const vldCol = NN_COLUMNS.indexOf('visibleLeadDays') + 1;
+  sheet.getRange(2, vldCol, dataRowCount, 1).setNumberFormat('0');
+
   sheet.autoResizeColumns(1, lastCol);
 
   const url = ss.getUrl();
-  Logger.log('NiceNotes spreadsheet ready: ' + url);
+  Logger.log('NiceNotes2 spreadsheet ready: ' + url);
   return { ok: true, spreadsheetId: id, url: url, sheetName: NN_SHEET_NAME };
 }
 
@@ -705,6 +711,14 @@ function nn_rowToTask_(row) {
     sortOrder = 1024;
   }
   const completedRaw = nn_cellStr_(row[NN_COLUMNS.indexOf('completedAt')]);
+  let visibleLeadDays = null;
+  const vldRaw = row[NN_COLUMNS.indexOf('visibleLeadDays')];
+  if (vldRaw !== null && vldRaw !== undefined && vldRaw !== '') {
+    const n = typeof vldRaw === 'number' ? vldRaw : parseInt(String(vldRaw).trim(), 10);
+    if (!isNaN(n) && n >= 0) {
+      visibleLeadDays = n;
+    }
+  }
   return {
     id: nn_cellStr_(row[0]),
     area: nn_cellStr_(row[NN_COLUMNS.indexOf('area')]),
@@ -721,7 +735,8 @@ function nn_rowToTask_(row) {
     completedAt: completedRaw === '' ? null : completedRaw,
     googleTaskId: nn_cellStr_(row[NN_COLUMNS.indexOf('googleTaskId')]),
     calendarEventId: nn_cellStr_(row[NN_COLUMNS.indexOf('calendarEventId')]),
-    repeatRule: nn_cellStr_(row[NN_COLUMNS.indexOf('repeatRule')])
+    repeatRule: nn_cellStr_(row[NN_COLUMNS.indexOf('repeatRule')]),
+    visibleLeadDays: visibleLeadDays
   };
 }
 
@@ -750,7 +765,8 @@ function nn_taskToRow_(task) {
     task.completedAt || '',
     task.googleTaskId || '',
     task.calendarEventId || '',
-    task.repeatRule || ''
+    task.repeatRule || '',
+    task.visibleLeadDays != null && task.visibleLeadDays !== '' ? task.visibleLeadDays : ''
   ];
 }
 
@@ -1033,6 +1049,15 @@ function nn_getOrCreateCalendar_() {
 }
 
 /**
+ * @param {number} dowMon1
+ * @return {string}
+ */
+function nn_rruleWeekdayToken_(dowMon1) {
+  const map = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA', 7: 'SU' };
+  return map[dowMon1] || 'MO';
+}
+
+/**
  * @param {Object} task
  * @return {string[]|null}
  */
@@ -1040,6 +1065,65 @@ function nn_repeatRuleToRecurrence_(task) {
   const r = nn_cellStr_(task.repeatRule || '');
   if (!r || r === 'none') {
     return null;
+  }
+  if (r.charAt(0) === '{') {
+    let o;
+    try {
+      o = JSON.parse(r);
+    } catch (e) {
+      return null;
+    }
+    if (!o || typeof o.k !== 'string') {
+      return null;
+    }
+    let rr = null;
+    switch (o.k) {
+      case 'daily':
+        rr = 'RRULE:FREQ=DAILY';
+        break;
+      case 'yearly':
+        rr = 'RRULE:FREQ=YEARLY';
+        break;
+      case 'weeklyByDay':
+        if (!o.dow || !o.dow.length) {
+          return null;
+        }
+        rr =
+          'RRULE:FREQ=WEEKLY;BYDAY=' +
+          o.dow
+            .map(function (d) {
+              return nn_rruleWeekdayToken_(parseInt(d, 10));
+            })
+            .join(',');
+        break;
+      case 'monthlyDom': {
+        const dom = parseInt(o.dom, 10);
+        if (isNaN(dom) || dom < 1 || dom > 31) {
+          return null;
+        }
+        rr = 'RRULE:FREQ=MONTHLY;BYMONTHDAY=' + dom;
+        break;
+      }
+      case 'monthlyNth': {
+        const nth = parseInt(o.nth, 10);
+        const dow = parseInt(o.dow, 10);
+        if (isNaN(dow) || dow < 1 || dow > 7) {
+          return null;
+        }
+        const tok = nn_rruleWeekdayToken_(dow);
+        if (nth === -1) {
+          rr = 'RRULE:FREQ=MONTHLY;BYDAY=-1' + tok;
+        } else if (nth >= 1 && nth <= 4) {
+          rr = 'RRULE:FREQ=MONTHLY;BYDAY=' + nth + tok;
+        } else {
+          return null;
+        }
+        break;
+      }
+      default:
+        return null;
+    }
+    return rr ? [rr] : null;
   }
   let rr;
   switch (r) {
