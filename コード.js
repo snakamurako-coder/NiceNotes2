@@ -8,6 +8,10 @@ function doGet() {
 var NN_PAGES_API_TOKEN_PROP = 'NICENOTES_PAGES_API_TOKEN';
 /** Script Properties: ユーザー別トークンを改行またはカンマ区切りで列挙 */
 var NN_PAGES_API_TOKEN_ALLOWLIST_PROP = 'NICENOTES_PAGES_API_TOKEN_ALLOWLIST';
+/** Script Properties: 許可メール（改行/カンマ/セミコロン区切り） */
+var NN_PAGES_ALLOWED_EMAILS_PROP = 'NICENOTES_PAGES_ALLOWED_EMAILS';
+/** Script Properties: Google OAuth クライアントID（任意） */
+var NN_PAGES_GOOGLE_CLIENT_ID_PROP = 'NICENOTES_PAGES_GOOGLE_CLIENT_ID';
 
 function nn_pagesApiJsonOut_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
@@ -23,6 +27,48 @@ function nn_pagesTokenList_(raw) {
     .split(/[\n,;]+/)
     .map(function (s) { return String(s || '').trim(); })
     .filter(function (s) { return !!s; });
+}
+
+/**
+ * 許可メール（lowercase）一覧を返す。
+ * @return {string[]}
+ */
+function nn_pagesAllowedEmails_() {
+  const raw = PropertiesService.getScriptProperties().getProperty(NN_PAGES_ALLOWED_EMAILS_PROP);
+  return nn_pagesTokenList_(raw).map(function (s) { return s.toLowerCase(); });
+}
+
+/**
+ * Google ID token を tokeninfo で検証し、email を返す。
+ * @param {string} idToken
+ * @return {{ ok: boolean, email?: string, error?: string }}
+ */
+function nn_verifyGoogleIdToken_(idToken) {
+  const token = String(idToken || '').trim();
+  if (!token) return { ok: false, error: 'ID token is required' };
+  try {
+    const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token);
+    const resp = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) {
+      return { ok: false, error: 'Invalid ID token' };
+    }
+    const data = JSON.parse(resp.getContentText() || '{}');
+    const email = String(data.email || '').trim().toLowerCase();
+    if (!email) return { ok: false, error: 'Email not found in ID token' };
+    if (String(data.email_verified || '') !== 'true') {
+      return { ok: false, error: 'Email is not verified' };
+    }
+
+    const expectedAud = String(
+      PropertiesService.getScriptProperties().getProperty(NN_PAGES_GOOGLE_CLIENT_ID_PROP) || ''
+    ).trim();
+    if (expectedAud && String(data.aud || '').trim() !== expectedAud) {
+      return { ok: false, error: 'Invalid ID token audience' };
+    }
+    return { ok: true, email: email };
+  } catch (e) {
+    return { ok: false, error: e && e.message ? String(e.message) : String(e) };
+  }
 }
 
 /**
@@ -56,7 +102,7 @@ function doPost(e) {
     if (e && e.postData && typeof e.postData.contents === 'string') raw = e.postData.contents;
     else raw = '{}';
 
-    /** @type {{ token?: string, action?: string, args?: unknown }} */
+    /** @type {{ token?: string, idToken?: string, action?: string, args?: unknown }} */
     let body;
     try {
       body = JSON.parse(raw || '{}');
@@ -68,6 +114,21 @@ function doPost(e) {
       return nn_pagesApiJsonOut_({
         ok: false,
         error: 'Unauthorized: API token is not allowlisted',
+      });
+    }
+
+    const idt = nn_verifyGoogleIdToken_(body.idToken);
+    if (!idt.ok) {
+      return nn_pagesApiJsonOut_({
+        ok: false,
+        error: 'Unauthorized: ' + (idt.error || 'Invalid Google account'),
+      });
+    }
+    const allowedEmails = nn_pagesAllowedEmails_();
+    if (allowedEmails.length === 0 || allowedEmails.indexOf(String(idt.email || '').toLowerCase()) < 0) {
+      return nn_pagesApiJsonOut_({
+        ok: false,
+        error: 'Forbidden: your Google account is not allowlisted',
       });
     }
 

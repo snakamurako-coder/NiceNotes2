@@ -220,6 +220,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script src="https://unpkg.com/dexie@4.0.10/dist/dexie.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -537,6 +538,10 @@
     /** GitHub Actions がデプロイ時に検索置換注入（開発・clasp は空のまま） */
     window.NN_GAS_EXEC_URL = 'https://script.google.com/macros/s/AKfycbxQd13yvS0oSMl_kd16XQLzlYDu5fZ0fln3pEDZYtAY3EjPjXYoZpLH-pXROy7OTziE/exec';
     window.NN_GAS_API_TOKEN = '8f1ec7243b3c0c4cf44af98f71a62290d7a9fc0d69c5bcf7c92d96e8e72666c8';
+    /** Google Cloud OAuth 2.0 クライアント ID（Web） */
+    window.NN_GOOGLE_CLIENT_ID = '';
+    window.NN_GOOGLE_ID_TOKEN = '';
+    window.__nnGisInitDone = false;
 
     function nnGasExecUrl() {
       var u = window.NN_GAS_EXEC_URL;
@@ -546,11 +551,55 @@
       var t = window.NN_GAS_API_TOKEN;
       return typeof t === 'string' ? t.trim() : '';
     }
-    /** google.script.run または Pages 向け POST API */
-    function nnGasCall(action, args) {
-      args = args || [];
+    function nnGoogleClientId() {
+      var c = window.NN_GOOGLE_CLIENT_ID;
+      return typeof c === 'string' ? c.trim() : '';
+    }
+    function nnCachedIdToken() {
+      var t = window.NN_GOOGLE_ID_TOKEN;
+      return typeof t === 'string' ? t.trim() : '';
+    }
+    function nnEnsureGoogleIdToken() {
+      var cached = nnCachedIdToken();
+      if (cached) return Promise.resolve(cached);
       return new Promise(function (resolve, reject) {
-        if (typeof google !== 'undefined' && google.script && google.script.run) {
+        var cid = nnGoogleClientId();
+        if (!cid) {
+          reject(new Error('NN_GOOGLE_CLIENT_ID が未設定です。'));
+          return;
+        }
+        if (!window.google || !google.accounts || !google.accounts.id) {
+          reject(new Error('Google 認証ライブラリの読み込みに失敗しました。'));
+          return;
+        }
+        try {
+          if (!window.__nnGisInitDone) {
+            google.accounts.id.initialize({
+              client_id: cid,
+              callback: function (resp) {
+                if (resp && resp.credential) {
+                  window.NN_GOOGLE_ID_TOKEN = String(resp.credential);
+                }
+              },
+              auto_select: true
+            });
+            window.__nnGisInitDone = true;
+          }
+          google.accounts.id.prompt(function () {
+            var t = nnCachedIdToken();
+            if (t) resolve(t);
+            else reject(new Error('Google ログインを完了してください。'));
+          });
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error(String(e)));
+        }
+      });
+    }
+    /** google.script.run または Pages 向け POST API */
+    async function nnGasCall(action, args) {
+      args = args || [];
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        return new Promise(function (resolve, reject) {
           try {
             var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (err) {
               var msg =
@@ -570,41 +619,31 @@
           } catch (e) {
             reject(e instanceof Error ? e : new Error(String(e)));
           }
-          return;
-        }
-        var url = nnGasExecUrl();
-        var tok = nnGasApiToken();
-        if (!url || !tok) {
-          reject(new Error('GAS の exec URL と API トークンが index に設定されていません。'));
-          return;
-        }
-        fetch(url, {
-          method: 'POST',
-          credentials: 'omit',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ token: tok, action: action, args: args })
-        })
-          .then(function (r) {
-            return r.text();
-          })
-          .then(function (text) {
-            var data;
-            try {
-              data = JSON.parse(text);
-            } catch (e2) {
-              reject(new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200)));
-              return;
-            }
-            if (!data || !data.ok) {
-              reject(new Error(data && data.error ? data.error : 'API error'));
-              return;
-            }
-            resolve(data.result);
-          })
-          .catch(function (fetchErr) {
-            reject(fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)));
-          });
+        });
+      }
+      var url = nnGasExecUrl();
+      var tok = nnGasApiToken();
+      if (!url || !tok) {
+        throw new Error('GAS の exec URL と API トークンが index に設定されていません。');
+      }
+      var idToken = await nnEnsureGoogleIdToken();
+      var r = await fetch(url, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: tok, idToken: idToken, action: action, args: args })
       });
+      var text = await r.text();
+      var data;
+      try {
+        data = JSON.parse(text);
+      } catch (e2) {
+        throw new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200));
+      }
+      if (!data || !data.ok) {
+        throw new Error(data && data.error ? data.error : 'API error');
+      }
+      return data.result;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
