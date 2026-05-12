@@ -8,6 +8,8 @@ function doGet() {
 var NN_PAGES_ALLOWED_EMAILS_PROP = 'NICENOTES_PAGES_ALLOWED_EMAILS';
 /** Script Properties: Google OAuth クライアントID（任意） */
 var NN_PAGES_GOOGLE_CLIENT_ID_PROP = 'NICENOTES_PAGES_GOOGLE_CLIENT_ID';
+/** UserProperties キー（ユーザーごとのワークスペース）。未設定時は ScriptProperties の MAIN_FOLDER_ID にフォールバック */
+var NN_USER_MAIN_FOLDER_KEY = 'MAIN_FOLDER_ID';
 var NN_PAGES_SESSION_PREFIX = 'NN_PAGES_SESSION_';
 var NN_PAGES_SESSION_DAYS = 30;
 
@@ -36,10 +38,120 @@ function nn_pagesAllowedEmails_() {
   return nn_pagesTokenList_(raw).map(function (s) { return s.toLowerCase(); });
 }
 
+/**
+ * 両方のスクリプトプロパティが非空のときのみホワイトリストを強制する。
+ * @return {boolean}
+ */
+function nn_pagesAuthStrictEnabled_() {
+  const props = PropertiesService.getScriptProperties();
+  const emails = String(props.getProperty(NN_PAGES_ALLOWED_EMAILS_PROP) || '').trim();
+  const clientId = String(props.getProperty(NN_PAGES_GOOGLE_CLIENT_ID_PROP) || '').trim();
+  return emails.length > 0 && clientId.length > 0;
+}
+
+/** 現在ユーザーのワークスペースルート。UserProperties 優先、なければ従来の ScriptProperties */
+function nn_getWorkspaceFolderId_() {
+  const userId = PropertiesService.getUserProperties().getProperty(NN_USER_MAIN_FOLDER_KEY);
+  if (userId) return userId;
+  return PropertiesService.getScriptProperties().getProperty('MAIN_FOLDER_ID') || '';
+}
+
+function nn_setWorkspaceFolderIdForCurrentUser_(folderId) {
+  PropertiesService.getUserProperties().setProperty(NN_USER_MAIN_FOLDER_KEY, folderId);
+}
+
+var NN_FOLDER_TREE_CACHE_FILE = 'app_folder_tree_cache.json';
+
+/**
+ * 登録フォルダ一覧。UserProperties に一度でも保存されていればそれを使い、なければ従来の ScriptProperties。
+ * @return {string[]}
+ */
+function nn_registeredFoldersArr_() {
+  const userRaw = PropertiesService.getUserProperties().getProperty('REGISTERED_FOLDERS');
+  if (userRaw !== null) {
+    try {
+      return JSON.parse(userRaw || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('REGISTERED_FOLDERS') || '[]');
+  } catch (e2) {
+    return [];
+  }
+}
+
+/** @param {string[]} arr */
+function nn_registeredFoldersSaveArr_(arr) {
+  PropertiesService.getUserProperties().setProperty('REGISTERED_FOLDERS', JSON.stringify(arr));
+}
+
+/**
+ * フォルダ色。UserProperties 優先、未設定なら ScriptProperties。
+ * @return {Object<string, string>}
+ */
+function nn_folderColorsObj_() {
+  const userRaw = PropertiesService.getUserProperties().getProperty('FOLDER_COLORS');
+  if (userRaw !== null) {
+    try {
+      return JSON.parse(userRaw || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('FOLDER_COLORS') || '{}');
+  } catch (e2) {
+    return {};
+  }
+}
+
+/** @param {Object<string, string>} obj */
+function nn_folderColorsSaveObj_(obj) {
+  PropertiesService.getUserProperties().setProperty('FOLDER_COLORS', JSON.stringify(obj));
+}
+
+/**
+ * ツリーキャッシュ・手書き JSON 等の保存先。ワークスペースがあればそのフォルダ、なければマイドライブルート。
+ * @return {GoogleAppsScript.Drive.Folder}
+ */
+function nn_workspaceDriveFolderOrRoot_() {
+  const id = nn_getWorkspaceFolderId_();
+  if (!id) return DriveApp.getRootFolder();
+  try {
+    return DriveApp.getFolderById(id);
+  } catch (e) {
+    return DriveApp.getRootFolder();
+  }
+}
+
+/** スタンドアロンスクリプトの所有者メール（小文字）。取得できなければ空 */
+function nn_scriptOwnerEmailLower_() {
+  try {
+    return String(DriveApp.getFileById(ScriptApp.getScriptId()).getOwner().getEmail() || '')
+      .trim()
+      .toLowerCase();
+  } catch (e) {
+    return '';
+  }
+}
+
+/** 実行ユーザーがスクリプト所有者と同一か */
+function nn_isCurrentUserScriptOwner_() {
+  const active = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!active) return false;
+  const owner = nn_scriptOwnerEmailLower_();
+  return !!owner && owner === active;
+}
+
 function nn_requireAllowlistedUser_() {
+  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!nn_pagesAuthStrictEnabled_()) {
+    return email;
+  }
   const allowed = nn_pagesAllowedEmails_();
   if (!allowed.length) throw new Error('NN_AUTH_ALLOWLIST_EMPTY');
-  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   if (!email) throw new Error('NN_AUTH_EMAIL_UNAVAILABLE');
   if (allowed.indexOf(email) < 0) throw new Error('NN_AUTH_FORBIDDEN: ' + email);
   return email;
@@ -163,9 +275,11 @@ function doPost(e) {
 
     const idt = nn_verifyGoogleIdToken_(body.idToken);
     const action = String(body.action || '');
+    const strictAuth = nn_pagesAuthStrictEnabled_();
     const allowedEmails = nn_pagesAllowedEmails_();
 
     function isAllowedEmail_(email) {
+      if (!strictAuth) return true;
       return allowedEmails.length > 0 && allowedEmails.indexOf(String(email || '').toLowerCase()) >= 0;
     }
 
@@ -291,7 +405,7 @@ function getFileData(fileId) {
 
 function saveAnnotation(fileName, jsonData) {
   try {
-    const folder = DriveApp.getRootFolder();
+    const folder = nn_workspaceDriveFolderOrRoot_();
     const targetName = fileName + '_rev.json';
     const files = folder.getFilesByName(targetName);
     if (files.hasNext()) {
@@ -305,8 +419,11 @@ function saveAnnotation(fileName, jsonData) {
 
 function loadAnnotation(fileName) {
   try {
-    const files = DriveApp.getRootFolder().getFilesByName(fileName + '_rev.json');
-    if (files.hasNext()) return { success: true, data: files.next().getBlob().getDataAsString() };
+    const name = fileName + '_rev.json';
+    const wsFiles = nn_workspaceDriveFolderOrRoot_().getFilesByName(name);
+    if (wsFiles.hasNext()) return { success: true, data: wsFiles.next().getBlob().getDataAsString() };
+    const rootFiles = DriveApp.getRootFolder().getFilesByName(name);
+    if (rootFiles.hasNext()) return { success: true, data: rootFiles.next().getBlob().getDataAsString() };
     return { success: true, data: null };
   } catch (e) { return { success: false, error: e.toString() }; }
 }
@@ -345,17 +462,21 @@ function recognizeSentence(allStrokes) {
 // =============================================================================
 
 function initializeApp() {
-  const props = PropertiesService.getScriptProperties();
-  let mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+  let mainFolderId = nn_getWorkspaceFolderId_();
 
   if (!mainFolderId) {
     try {
-      const scriptId = ScriptApp.getScriptId();
-      const parents = DriveApp.getFileById(scriptId).getParents();
-      const parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+      var parentFolder;
+      if (nn_isCurrentUserScriptOwner_()) {
+        const scriptId = ScriptApp.getScriptId();
+        const parents = DriveApp.getFileById(scriptId).getParents();
+        parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+      } else {
+        parentFolder = DriveApp.getRootFolder();
+      }
       const newFolder = parentFolder.createFolder('会議資料_Workspace');
       mainFolderId = newFolder.getId();
-      props.setProperty('MAIN_FOLDER_ID', mainFolderId);
+      nn_setWorkspaceFolderIdForCurrentUser_(mainFolderId);
     } catch (e) {
       return { success: false, error: '初期化に失敗しました: ' + e.toString() };
     }
@@ -372,8 +493,7 @@ function initializeApp() {
  */
 function nnSaveCaptureToDrive(base64, mimeType, fileName) {
   try {
-    const props = PropertiesService.getScriptProperties();
-    const mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+    const mainFolderId = nn_getWorkspaceFolderId_();
     if (!mainFolderId) {
       return { success: false, error: 'MAIN_FOLDER_ID がありません。' };
     }
@@ -398,11 +518,10 @@ function registerFolder(inputData, isOrg) {
   const id = extractIdFromUrl(inputData);
   try {
     DriveApp.getFolderById(id);
-    const props = PropertiesService.getScriptProperties();
-    let folders = JSON.parse(props.getProperty('REGISTERED_FOLDERS') || '[]');
+    let folders = nn_registeredFoldersArr_();
     if (folders.indexOf(id) === -1) {
       folders.push(id);
-      props.setProperty('REGISTERED_FOLDERS', JSON.stringify(folders));
+      nn_registeredFoldersSaveArr_(folders);
     }
     return { success: true };
   } catch (e) {
@@ -423,8 +542,10 @@ function registerFolder(inputData, isOrg) {
 function importPdf(inputData) {
   const id = extractIdFromUrl(inputData);
   try {
-    const props = PropertiesService.getScriptProperties();
-    const mainFolderId = props.getProperty('MAIN_FOLDER_ID');
+    const mainFolderId = nn_getWorkspaceFolderId_();
+    if (!mainFolderId) {
+      return { success: false, error: 'ワークスペースが未初期化です。先に初期化してください。' };
+    }
     const mainFolder = DriveApp.getFolderById(mainFolderId);
 
     const originalFile = DriveApp.getFileById(id);
@@ -445,13 +566,12 @@ function importPdf(inputData) {
 }
 
 function setFolderColor(folderId, colorCode) {
-  const props = PropertiesService.getScriptProperties();
-  let colors = JSON.parse(props.getProperty('FOLDER_COLORS') || '{}');
+  let colors = nn_folderColorsObj_();
   colors[folderId] = colorCode;
-  props.setProperty('FOLDER_COLORS', JSON.stringify(colors));
+  nn_folderColorsSaveObj_(colors);
 
-  const cacheFileName = 'app_folder_tree_cache.json';
-  const files = DriveApp.getRootFolder().getFilesByName(cacheFileName);
+  const cacheFileName = NN_FOLDER_TREE_CACHE_FILE;
+  const files = nn_workspaceDriveFolderOrRoot_().getFilesByName(cacheFileName);
   if (files.hasNext()) {
     try {
       const cacheFile = files.next();
@@ -466,8 +586,8 @@ function setFolderColor(folderId, colorCode) {
 }
 
 function getFolderTree(forceRefresh) {
-  const cacheFileName = 'app_folder_tree_cache.json';
-  const rootFolder = DriveApp.getRootFolder();
+  const cacheFileName = NN_FOLDER_TREE_CACHE_FILE;
+  const rootFolder = nn_workspaceDriveFolderOrRoot_();
   let cacheFile = null;
   const files = rootFolder.getFilesByName(cacheFileName);
   if (files.hasNext()) cacheFile = files.next();
@@ -480,17 +600,15 @@ function getFolderTree(forceRefresh) {
     }
   }
 
-  const props = PropertiesService.getScriptProperties();
   let roots = [];
-  const mainId = props.getProperty('MAIN_FOLDER_ID');
+  const mainId = nn_getWorkspaceFolderId_();
   if (mainId) roots.push(mainId);
-  const registeredStr = props.getProperty('REGISTERED_FOLDERS');
-  if (registeredStr) roots = roots.concat(JSON.parse(registeredStr));
+  roots = roots.concat(nn_registeredFoldersArr_());
   roots = Array.from(new Set(roots));
 
   const resultFolders = [];
   const resultFiles = [];
-  const folderColors = JSON.parse(props.getProperty('FOLDER_COLORS') || '{}');
+  const folderColors = nn_folderColorsObj_();
 
   function scan(folder, parentId) {
     const currentId = folder.getId();
