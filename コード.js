@@ -4,6 +4,97 @@ function doGet() {
     .setTitle('NiceNotes · 会議資料ワークスペース');
 }
 
+/** Script Properties: NICENOTES_PAGES_API_TOKEN と同一の値をクライアントに設定すること */
+var NN_PAGES_API_TOKEN_PROP = 'NICENOTES_PAGES_API_TOKEN';
+
+function nn_pagesApiJsonOut_(payload) {
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * GitHub Pages 等（別オリジン）からの呼び出し用 JSON API。
+ * ブラウザの CORS プリフライトを避けるため、クライアントは Content-Type: text/plain で JSON を送る。
+ *
+ * POST body JSON: `{ "token": string, "action": string, "args": any[] }`
+ * 応答: `{ "ok": true, "result": ... }` または `{ "ok": false, "error": string }`
+ */
+function doPost(e) {
+  try {
+    let raw = '';
+    if (e && e.postData && typeof e.postData.contents === 'string') raw = e.postData.contents;
+    else raw = '{}';
+
+    /** @type {{ token?: string, action?: string, args?: unknown }} */
+    let body;
+    try {
+      body = JSON.parse(raw || '{}');
+    } catch (parseErr) {
+      return nn_pagesApiJsonOut_({ ok: false, error: 'Invalid JSON body' });
+    }
+
+    var expected = PropertiesService.getScriptProperties().getProperty(NN_PAGES_API_TOKEN_PROP);
+    if (!expected || String(body.token || '') !== String(expected)) {
+      return nn_pagesApiJsonOut_({ ok: false, error: 'Unauthorized' });
+    }
+
+    const action = body.action;
+    const argList = body.args !== undefined && body.args !== null ? body.args : [];
+    const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
+    return nn_pagesApiJsonOut_({ ok: true, result: result });
+  } catch (handlerErr) {
+    return nn_pagesApiJsonOut_({
+      ok: false,
+      error: handlerErr && handlerErr.message ? String(handlerErr.message) : String(handlerErr),
+    });
+  }
+}
+
+/**
+ * @param {string} action
+ * @param {any[]} args
+ * @return {*}
+ */
+function nn_pagesApiDispatch_(action, args) {
+  if (!action || typeof action !== 'string') {
+    throw new Error('NN_API_E_ACTION_REQUIRED');
+  }
+  const a = Array.isArray(args) ? args : [];
+  switch (action) {
+    case 'initializeApp':
+      return initializeApp.apply(null, a);
+    case 'registerFolder':
+      return registerFolder.apply(null, a);
+    case 'importPdf':
+      return importPdf.apply(null, a);
+    case 'setFolderColor':
+      return setFolderColor.apply(null, a);
+    case 'getFolderTree':
+      return getFolderTree.apply(null, a);
+    case 'updateMeetingState':
+      return updateMeetingState.apply(null, a);
+    case 'getMeetingState':
+      return getMeetingState.apply(null, a);
+    case 'loadAnnotation':
+      return loadAnnotation.apply(null, a);
+    case 'saveAnnotation':
+      return saveAnnotation.apply(null, a);
+    case 'getFileList':
+      return getFileList.apply(null, a);
+    case 'getFileData':
+      return getFileData.apply(null, a);
+    case 'recognizeSentence':
+      return recognizeSentence.apply(null, a);
+    case 'nnSaveCaptureToDrive':
+      return nnSaveCaptureToDrive.apply(null, a);
+    case 'nn_getAllTasks':
+      return nn_getAllTasks.apply(null, a);
+    case 'nn_batchSync':
+      return nn_batchSync.apply(null, a);
+    default:
+      throw new Error('NN_API_E_UNKNOWN_ACTION: ' + action);
+  }
+}
+
 function getFileList(mode) {
   try {
     const props = PropertiesService.getScriptProperties();

@@ -532,6 +532,79 @@
   </div>
 
   <script>
+    /** GitHub Actions がデプロイ時に検索置換注入（開発・clasp は空のまま） */
+    window.NN_GAS_EXEC_URL = '';
+    window.NN_GAS_API_TOKEN = '';
+
+    function nnGasExecUrl() {
+      var u = window.NN_GAS_EXEC_URL;
+      return typeof u === 'string' ? u.trim() : '';
+    }
+    function nnGasApiToken() {
+      var t = window.NN_GAS_API_TOKEN;
+      return typeof t === 'string' ? t.trim() : '';
+    }
+    /** google.script.run または Pages 向け POST API */
+    function nnGasCall(action, args) {
+      args = args || [];
+      return new Promise(function (resolve, reject) {
+        if (typeof google !== 'undefined' && google.script && google.script.run) {
+          try {
+            var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (err) {
+              var msg =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : err && typeof err === 'object' && typeof err.details === 'string'
+                    ? err.details
+                    : String(err || 'GAS failure');
+              reject(new Error(msg));
+            });
+            var fn = runner[action];
+            if (typeof fn !== 'function') {
+              reject(new Error('Unknown server function: ' + action));
+              return;
+            }
+            fn.apply(runner, args);
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+          return;
+        }
+        var url = nnGasExecUrl();
+        var tok = nnGasApiToken();
+        if (!url || !tok) {
+          reject(new Error('GAS の exec URL と API トークンが index に設定されていません。'));
+          return;
+        }
+        fetch(url, {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ token: tok, action: action, args: args })
+        })
+          .then(function (r) {
+            return r.text();
+          })
+          .then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (e2) {
+              reject(new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200)));
+              return;
+            }
+            if (!data || !data.ok) {
+              reject(new Error(data && data.error ? data.error : 'API error'));
+              return;
+            }
+            resolve(data.result);
+          })
+          .catch(function (fetchErr) {
+            reject(fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)));
+          });
+      });
+    }
+
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
     const viewerContainer = document.getElementById('viewer-container');
@@ -620,8 +693,8 @@
     window.onload = function () {
       applyRoleMeet();
       showLoader('システムを初期設定中...');
-      google.script.run
-        .withSuccessHandler(function (res) {
+      nnGasCall('initializeApp', [])
+        .then(function (res) {
           hideLoader();
           if (res && res.success) {
             renderQuickAccess();
@@ -630,15 +703,14 @@
             startupWireMainMenu();
             showStartupGate();
           } else {
-            alert((res && res.error) ? res.error : '初期化に失敗しました');
+            alert(res && res.error ? res.error : '初期化に失敗しました');
             fetchFileList();
           }
         })
-        .withFailureHandler(function () {
+        .catch(function () {
           hideLoader();
           fetchFileList();
-        })
-        .initializeApp();
+        });
     };
     function showLoader(text) { loaderText.textContent = text; loader.style.display = 'flex'; }
     function hideLoader() { loader.style.display = 'none'; }
@@ -658,8 +730,8 @@
       var isOrg = document.querySelector('input[name="folder-type"]:checked').value === 'org';
       if (!input) return alert('URLまたはIDを入力してください。');
       showLoader('フォルダを確認中...');
-      google.script.run
-        .withSuccessHandler(function (res) {
+      nnGasCall('registerFolder', [input, isOrg])
+        .then(function (res) {
           hideLoader();
           if (res && res.success) {
             alert('✅ フォルダをワークスペースに追加しました！');
@@ -667,17 +739,20 @@
             document.getElementById('input-folder-id').value = '';
             loadFolderTree(true);
           } else {
-            alert((res && res.error) ? res.error : '登録に失敗しました');
+            alert(res && res.error ? res.error : '登録に失敗しました');
           }
         })
-        .registerFolder(input, isOrg);
+        .catch(function (err) {
+          hideLoader();
+          alert(err && err.message ? err.message : '登録に失敗しました');
+        });
     }
     function submitAddPdf() {
       var input = document.getElementById('input-pdf-id').value;
       if (!input) return alert('URLまたはIDを入力してください。');
       showLoader('PDFを複製して取り込み中...');
-      google.script.run
-        .withSuccessHandler(function (res) {
+      nnGasCall('importPdf', [input])
+        .then(function (res) {
           hideLoader();
           if (res && res.success) {
             alert('✅ PDFを取り込みました。\n（複製ファイル名: ' + (res.newFileName || '') + '）');
@@ -685,10 +760,13 @@
             document.getElementById('input-pdf-id').value = '';
             loadFolderTree(true);
           } else {
-            alert((res && res.error) ? res.error : '取り込みに失敗しました');
+            alert(res && res.error ? res.error : '取り込みに失敗しました');
           }
         })
-        .importPdf(input);
+        .catch(function (err) {
+          hideLoader();
+          alert(err && err.message ? err.message : '取り込みに失敗しました');
+        });
     }
 
     function openColorPalette(e, folderId) {
@@ -715,7 +793,7 @@
       if (!treeData.folderColors) treeData.folderColors = {};
       treeData.folderColors[folderId] = color;
       renderFolders();
-      google.script.run.setFolderColor(folderId, color);
+      nnGasCall('setFolderColor', [folderId, color]).catch(function () {});
     }
 
     function showHomeMeet() {
@@ -746,15 +824,18 @@
       var ts = document.getElementById('tree-status');
       if (ts) ts.textContent = 'データ取得中...';
       if (forceRefresh) showLoader('ドライブをスキャン中... (数秒かかります)');
-      google.script.run
-        .withSuccessHandler(function (data) {
+      nnGasCall('getFolderTree', [forceRefresh])
+        .then(function (data) {
           if (forceRefresh) hideLoader();
           treeData = data || { folders: [], files: [], folderColors: {} };
           var lu = treeData.lastUpdated ? new Date(treeData.lastUpdated).toLocaleString() : '';
           if (ts) ts.textContent = lu ? '最終更新: ' + lu : '';
           renderFolders();
         })
-        .getFolderTree(forceRefresh);
+        .catch(function () {
+          if (forceRefresh) hideLoader();
+          if (ts) ts.textContent = '取得に失敗しました';
+        });
     }
 
     function renderFolders() {
@@ -966,12 +1047,12 @@
         docH: viewerContainer.clientHeight / currentScale,
         strokeTime: lastStrokeTime
       };
-      google.script.run.updateMeetingState(JSON.stringify(state));
+      nnGasCall('updateMeetingState', [JSON.stringify(state)]).catch(function () {});
     }
 
     function pullMeetingState() {
-      google.script.run
-        .withSuccessHandler(function (res) {
+      nnGasCall('getMeetingState', [])
+        .then(function (res) {
           if (!res) return;
           var state = JSON.parse(res);
           if (state.fileId && state.fileId !== currentFileId) {
@@ -994,18 +1075,18 @@
             reloadStrokesSilently();
           }
         })
-        .getMeetingState();
+        .catch(function () {});
     }
 
     function reloadStrokesSilently() {
       if (!fileName) return;
       var baseName = fileName.replace(/\.[^/.]+$/, '');
-      google.script.run
-        .withSuccessHandler(function (res) {
+      nnGasCall('loadAnnotation', [baseName])
+        .then(function (res) {
           if (res && res.success && res.data) sharedStrokesByPage = JSON.parse(res.data);
           redraw();
         })
-        .loadAnnotation(baseName);
+        .catch(function () {});
     }
 
     function fetchFileList() {
@@ -1014,8 +1095,8 @@
       legacyFolderNavActive = true;
       homeScreen.style.display = 'none';
       viewerContainer.style.display = 'block';
-      google.script.run
-        .withSuccessHandler(function (list) {
+      nnGasCall('getFileList', [mode])
+        .then(function (list) {
           if (list && list.error) {
             alert('エラー: ' + list.error);
             hideLoader();
@@ -1035,7 +1116,10 @@
           });
           loadSelectedFile(false, false, true);
         })
-        .getFileList(mode);
+        .catch(function (err) {
+          alert(err && err.message ? err.message : '一覧の取得に失敗しました');
+          hideLoader();
+        });
     }
 
     function onFileDropdownChanged() {
@@ -1058,11 +1142,13 @@
         if (!nnHasAnyStrokes(sharedStrokesByPage)) return;
         var json = JSON.stringify(sharedStrokesByPage);
         if (!silent) statusDiv.textContent = '保存中...';
-        google.script.run
-          .withSuccessHandler(function () {
+        nnGasCall('saveAnnotation', [baseName, json])
+          .then(function () {
             if (!silent) statusDiv.textContent = '共有保存完了';
           })
-          .saveAnnotation(baseName, json);
+          .catch(function () {
+            if (!silent) statusDiv.textContent = '共有保存に失敗しました';
+          });
       } else {
         if (!nnHasAnyStrokes(localStrokesByPage)) return;
         var jsonL = JSON.stringify(localStrokesByPage);
@@ -1090,14 +1176,14 @@
       fileType = ext === 'jpg' || ext === 'jpeg' || ext === 'png' ? 'image' : 'pdf';
 
       if (!silent) showLoader('ファイルを開いています...');
-      google.script.run
-        .withSuccessHandler(function (base64Data) {
+      nnGasCall('getFileData', [currentFileId])
+        .then(function (base64Data) {
           if (base64Data && base64Data.error) {
             alert('エラー: ' + base64Data.error);
             hideLoader();
             return;
           }
-          (async function () {
+          return (async function () {
             try {
               if (fileType === 'pdf') {
                 var binaryString = window.atob(base64Data);
@@ -1125,21 +1211,18 @@
               var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
               localStrokesByPage = savedLocalMemo ? JSON.parse(savedLocalMemo) : {};
 
-              google.script.run
-                .withSuccessHandler(function (res) {
-                  if (res && res.success && res.data) sharedStrokesByPage = JSON.parse(res.data);
-                  else sharedStrokesByPage = {};
-                  if (!silent) {
-                    currentScale = 1.0;
-                    viewerContainer.scrollLeft = 0;
-                    viewerContainer.scrollTop = 0;
-                  }
-                  renderPage(currentPageNum);
-                  hideLoader();
-                  updateFavoriteButtonStatus();
-                  applyRoleMeet();
-                })
-                .loadAnnotation(baseName);
+              var res = await nnGasCall('loadAnnotation', [baseName]);
+              if (res && res.success && res.data) sharedStrokesByPage = JSON.parse(res.data);
+              else sharedStrokesByPage = {};
+              if (!silent) {
+                currentScale = 1.0;
+                viewerContainer.scrollLeft = 0;
+                viewerContainer.scrollTop = 0;
+              }
+              renderPage(currentPageNum);
+              hideLoader();
+              updateFavoriteButtonStatus();
+              applyRoleMeet();
             } catch (err) {
               console.error(err);
               alert('読み込み失敗: ' + err.message);
@@ -1147,7 +1230,10 @@
             }
           })();
         })
-        .getFileData(currentFileId);
+        .catch(function (err) {
+          alert(err && err.message ? err.message : '読み込みに失敗しました');
+          hideLoader();
+        });
     }
 
     function nnPreloadLastPdfInBackground() {
@@ -1157,8 +1243,8 @@
       try {
         var last = JSON.parse(s);
         if (!last || !last.id) return;
-        google.script.run
-          .withSuccessHandler(function (base64Data) {
+        nnGasCall('getFileData', [last.id])
+          .then(function (base64Data) {
             if (!base64Data || (typeof base64Data === 'object' && base64Data.error)) return;
             if (typeof base64Data === 'string') {
               window.nnPdfPreload = {
@@ -1168,10 +1254,9 @@
               };
             }
           })
-          .withFailureHandler(function () {
+          .catch(function () {
             window.nnPdfPreload = null;
-          })
-          .getFileData(last.id);
+          });
       } catch (e) {
         window.nnPdfPreload = null;
       }
@@ -1203,29 +1288,26 @@
           currentPageNum = 1;
           var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
           localStrokesByPage = savedLocalMemo ? JSON.parse(savedLocalMemo) : {};
-          google.script.run
-            .withSuccessHandler(function (res) {
-              if (res && res.success && res.data) sharedStrokesByPage = JSON.parse(res.data);
-              else sharedStrokesByPage = {};
-              currentScale = 1.0;
-              viewerContainer.scrollLeft = 0;
-              viewerContainer.scrollTop = 0;
-              homeScreen.style.display = 'none';
-              viewerContainer.style.display = 'block';
-              var nnPanel = document.getElementById('nn-panel');
-              if (nnPanel) nnPanel.style.display = 'none';
-              var pdfBtn = document.getElementById('btn-mode-pdf');
-              var taskBtn = document.getElementById('btn-mode-tasks');
-              if (pdfBtn && taskBtn && taskBtn.classList.contains('active-mode')) {
-                taskBtn.classList.remove('active-mode');
-                pdfBtn.classList.add('active-mode');
-              }
-              renderPage(currentPageNum);
-              hideLoader();
-              updateFavoriteButtonStatus();
-              applyRoleMeet();
-            })
-            .loadAnnotation(baseName);
+          var res = await nnGasCall('loadAnnotation', [baseName]);
+          if (res && res.success && res.data) sharedStrokesByPage = JSON.parse(res.data);
+          else sharedStrokesByPage = {};
+          currentScale = 1.0;
+          viewerContainer.scrollLeft = 0;
+          viewerContainer.scrollTop = 0;
+          homeScreen.style.display = 'none';
+          viewerContainer.style.display = 'block';
+          var nnPanel = document.getElementById('nn-panel');
+          if (nnPanel) nnPanel.style.display = 'none';
+          var pdfBtn = document.getElementById('btn-mode-pdf');
+          var taskBtn = document.getElementById('btn-mode-tasks');
+          if (pdfBtn && taskBtn && taskBtn.classList.contains('active-mode')) {
+            taskBtn.classList.remove('active-mode');
+            pdfBtn.classList.add('active-mode');
+          }
+          renderPage(currentPageNum);
+          hideLoader();
+          updateFavoriteButtonStatus();
+          applyRoleMeet();
         } catch (err) {
           console.error(err);
           alert('読み込み失敗: ' + err.message);
@@ -1567,8 +1649,8 @@
         apiInk.push([xArr, yArr, tArr]);
       });
 
-      google.script.run
-        .withSuccessHandler(function (text) {
+      nnGasCall('recognizeSentence', [apiInk])
+        .then(function (text) {
           hideLoader();
           if (text) {
             prompt('文字起こしの結果です。コピーしてご利用ください:', text);
@@ -1576,11 +1658,10 @@
             alert('文字を認識できませんでした。');
           }
         })
-        .withFailureHandler(function (err) {
+        .catch(function (err) {
           hideLoader();
-          alert('サーバーとの通信エラーが発生しました: ' + err.message);
-        })
-        .recognizeSentence(apiInk);
+          alert('サーバーとの通信エラーが発生しました: ' + (err && err.message ? err.message : String(err)));
+        });
     }
 
     async function exportFile() {
@@ -1671,7 +1752,10 @@
       });
 
       function nnIsGas() {
-        return typeof google !== 'undefined' && google.script && google.script.run;
+        if (typeof google !== 'undefined' && google.script && google.script.run) return true;
+        var u = typeof window.NN_GAS_EXEC_URL === 'string' ? window.NN_GAS_EXEC_URL.trim() : '';
+        var tok = typeof window.NN_GAS_API_TOKEN === 'string' ? window.NN_GAS_API_TOKEN.trim() : '';
+        return !!(u && tok);
       }
 
       function nnUuid() {
@@ -1911,7 +1995,7 @@
         const el = document.getElementById('nn-online-badge');
         if (!el) return;
         if (navigator.onLine) {
-          el.textContent = nnIsGas() ? '接続: オンライン' : '接続: GAS 外（ローカル表示のみ）';
+          el.textContent = nnIsGas() ? '接続: オンライン' : '接続: バックエンド未設定（ローカルのみ）';
           el.className = 'online';
         } else {
           el.textContent = '接続: オフライン（キュー後送り）';
@@ -1981,26 +2065,19 @@
           const ops = rows.map(function (r) {
             return r.op;
           });
-          const hadProblems = await new Promise(function (resolve) {
-            google.script.run
-              .withSuccessHandler(function (res) {
-                nnApplyBatchResults(rows, (res && res.results) || [])
-                  .then(resolve)
-                  .catch(function () {
-                    resolve(true);
-                  });
-              })
-              .withFailureHandler(function (err) {
-                console.error(err);
-                alert(
-                  '同期エラー: ' +
-                    (err && err.message ? err.message : String(err)) +
-                    '\n\nキューはクリアしていません。「同期」で再試行するか、整合が取れない場合は「サーバーを取り込む」を検討してください。'
-                );
-                resolve(true);
-              })
-              .nn_batchSync(ops);
-          });
+          let hadProblems;
+          try {
+            const res = await nnGasCall('nn_batchSync', [ops]);
+            hadProblems = await nnApplyBatchResults(rows, (res && res.results) || []);
+          } catch (err) {
+            console.error(err);
+            alert(
+              '同期エラー: ' +
+                (err && err.message ? err.message : String(err)) +
+                '\n\nキューはクリアしていません。「同期」で再試行するか、整合が取れない場合は「サーバーを取り込む」を検討してください。'
+            );
+            hadProblems = true;
+          }
           if (hadProblems) break;
           const left = await nnDb.pendingOps.count();
           if (left === 0) break;
@@ -2281,7 +2358,7 @@
 
       window.nnPullServerOverwrite = async function nnPullServerOverwrite() {
         if (!nnIsGas()) {
-          alert('Web アプリ（GAS）として開いてください。');
+          alert('この環境ではサーバーへ接続できません。Google の Web アプリで開くか、GitHub Pages で exec URL と API トークンを設定してください。');
           return;
         }
         try {
@@ -2296,9 +2373,7 @@
           await nnUpdateSyncBadge();
         }
         try {
-          const serverTasks = await new Promise(function (resolve, reject) {
-            google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).nn_getAllTasks();
-          });
+          const serverTasks = await nnGasCall('nn_getAllTasks', []);
           await nnDb.tasks.clear();
           for (let i = 0; i < serverTasks.length; i++) {
             await nnDb.tasks.put(nnNormalizeTask(serverTasks[i]));
@@ -2322,9 +2397,7 @@
         const fpLocal = window.nnFpAtLastRender || '';
         let serverTasks;
         try {
-          serverTasks = await new Promise(function (resolve, reject) {
-            google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).nn_getAllTasks();
-          });
+          serverTasks = await nnGasCall('nn_getAllTasks', []);
         } catch (e) {
           console.warn('nn_getAllTasks', e);
           return;
@@ -2565,8 +2638,8 @@
               var base64 = dataUrl.split(',')[1];
               var ext = (blob.type || '').indexOf('mp4') >= 0 ? 'm4a' : 'webm';
               var fname = 'voice_memo_' + Date.now() + '.' + ext;
-              google.script.run
-                .withSuccessHandler(function (res) {
+              nnGasCall('nnSaveCaptureToDrive', [base64, blob.type || 'audio/webm', fname])
+                .then(function (res) {
                   if (res && res.success && res.url) {
                     nnLastAudioUrl = res.url;
                     if (st) st.textContent = '保存済み。「宛先へ」を押してください。';
@@ -2574,14 +2647,13 @@
                     if (b) b.disabled = false;
                   } else {
                     if (st) st.textContent = '保存失敗';
-                    alert((res && res.error) ? res.error : 'Drive 保存に失敗しました');
+                    alert(res && res.error ? res.error : 'Drive 保存に失敗しました');
                   }
                 })
-                .withFailureHandler(function (err) {
+                .catch(function (err) {
                   if (st) st.textContent = 'エラー';
                   alert(err && err.message ? err.message : String(err));
-                })
-                .nnSaveCaptureToDrive(base64, blob.type || 'audio/webm', fname);
+                });
             };
             reader.readAsDataURL(blob);
             try {
@@ -2749,8 +2821,8 @@
             });
             apiInk.push([xArr, yArr, tArr]);
           });
-          google.script.run
-            .withSuccessHandler(function (text) {
+          nnGasCall('recognizeSentence', [apiInk])
+            .then(function (text) {
               if (text) {
                 var ta = document.getElementById('nn-quick-key-ta');
                 if (ta) ta.value = (ta.value ? ta.value + '\n' : '') + text;
@@ -2761,10 +2833,9 @@
                 alert('文字を認識できませんでした。');
               }
             })
-            .withFailureHandler(function (err) {
+            .catch(function (err) {
               alert(err && err.message ? err.message : String(err));
-            })
-            .recognizeSentence(apiInk);
+            });
         });
       }
 
@@ -2779,15 +2850,18 @@
             return;
           }
           var pngBase64 = c.toDataURL('image/png').split(',')[1];
-          google.script.run
-            .withSuccessHandler(function (res) {
+          nnGasCall('nnSaveCaptureToDrive', [
+            pngBase64,
+            'image/png',
+            'handwriting_' + Date.now() + '.png'
+          ])
+            .then(function (res) {
               var link = res && res.success && res.url ? '\n\n[手書き画像](' + res.url + ')' : '';
               nnOpenQuickDestModal(txt + link);
             })
-            .withFailureHandler(function () {
+            .catch(function () {
               nnOpenQuickDestModal(txt);
-            })
-            .nnSaveCaptureToDrive(pngBase64, 'image/png', 'handwriting_' + Date.now() + '.png');
+            });
         });
       }
 
