@@ -4,14 +4,8 @@ function doGet() {
     .setTitle('NiceNotes2 · 会議資料ワークスペース');
 }
 
-/** Script Properties: 許可メール（改行/カンマ/セミコロン区切り） */
-var NN_PAGES_ALLOWED_EMAILS_PROP = 'NICENOTES_PAGES_ALLOWED_EMAILS';
-/** Script Properties: Google OAuth クライアントID（任意） */
-var NN_PAGES_GOOGLE_CLIENT_ID_PROP = 'NICENOTES_PAGES_GOOGLE_CLIENT_ID';
 /** UserProperties キー（ユーザーごとのワークスペース）。未設定時は ScriptProperties の MAIN_FOLDER_ID にフォールバック */
 var NN_USER_MAIN_FOLDER_KEY = 'MAIN_FOLDER_ID';
-var NN_PAGES_SESSION_PREFIX = 'NN_PAGES_SESSION_';
-var NN_PAGES_SESSION_DAYS = 30;
 
 function nn_pagesApiJsonOut_(payload) {
   var out = ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
@@ -32,38 +26,6 @@ function nn_pagesApiJsonOut_(payload) {
 /** ブラウザの CORS プリフライト用（POST と同様のヘッダーを返す） */
 function doOptions() {
   return nn_pagesApiJsonOut_({ ok: true });
-}
-
-/**
- * 改行/カンマ/セミコロン区切りのトークン文字列を配列化する。
- * @param {string} raw
- * @return {string[]}
- */
-function nn_pagesTokenList_(raw) {
-  return String(raw || '')
-    .split(/[\n,;]+/)
-    .map(function (s) { return String(s || '').trim(); })
-    .filter(function (s) { return !!s; });
-}
-
-/**
- * 許可メール（lowercase）一覧を返す。
- * @return {string[]}
- */
-function nn_pagesAllowedEmails_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(NN_PAGES_ALLOWED_EMAILS_PROP);
-  return nn_pagesTokenList_(raw).map(function (s) { return s.toLowerCase(); });
-}
-
-/**
- * 両方のスクリプトプロパティが非空のときのみホワイトリストを強制する。
- * @return {boolean}
- */
-function nn_pagesAuthStrictEnabled_() {
-  const props = PropertiesService.getScriptProperties();
-  const emails = String(props.getProperty(NN_PAGES_ALLOWED_EMAILS_PROP) || '').trim();
-  const clientId = String(props.getProperty(NN_PAGES_GOOGLE_CLIENT_ID_PROP) || '').trim();
-  return emails.length > 0 && clientId.length > 0;
 }
 
 /** 現在ユーザーのワークスペースルート。UserProperties 優先、なければ従来の ScriptProperties */
@@ -162,119 +124,23 @@ function nn_isCurrentUserScriptOwner_() {
   return !!owner && owner === active;
 }
 
-function nn_requireAllowlistedUser_() {
-  const email = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase();
-  if (!nn_pagesAuthStrictEnabled_()) {
-    return email;
-  }
-  const allowed = nn_pagesAllowedEmails_();
-  if (!allowed.length) throw new Error('NN_AUTH_ALLOWLIST_EMPTY');
-  if (!email) throw new Error('NN_AUTH_EMAIL_UNAVAILABLE');
-  if (allowed.indexOf(email) < 0) throw new Error('NN_AUTH_FORBIDDEN: ' + email);
-  return email;
-}
-
-/**
- * Google ID token を tokeninfo で検証し、email を返す。
- * @param {string} idToken
- * @return {{ ok: boolean, email?: string, error?: string }}
- */
-function nn_verifyGoogleIdToken_(idToken) {
-  const token = String(idToken || '').trim();
-  if (!token) return { ok: false, error: 'ID token is required' };
-  try {
-    const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token);
-    const resp = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
-    if (resp.getResponseCode() !== 200) {
-      return { ok: false, error: 'Invalid ID token' };
-    }
-    const data = JSON.parse(resp.getContentText() || '{}');
-    const email = String(data.email || '').trim().toLowerCase();
-    if (!email) return { ok: false, error: 'Email not found in ID token' };
-    if (String(data.email_verified || '') !== 'true') {
-      return { ok: false, error: 'Email is not verified' };
-    }
-
-    const expectedAud = String(
-      PropertiesService.getScriptProperties().getProperty(NN_PAGES_GOOGLE_CLIENT_ID_PROP) || ''
-    ).trim();
-    if (expectedAud && String(data.aud || '').trim() !== expectedAud) {
-      return { ok: false, error: 'Invalid ID token audience' };
-    }
-    return { ok: true, email: email };
-  } catch (e) {
-    return { ok: false, error: e && e.message ? String(e.message) : String(e) };
-  }
-}
-
-function nn_digestHex_(text) {
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text || ''));
-  return bytes.map(function (b) {
-    var v = (b + 256) % 256;
-    return ('0' + v.toString(16)).slice(-2);
-  }).join('');
-}
-
-function nn_sessionKey_(sessionToken) {
-  return NN_PAGES_SESSION_PREFIX + nn_digestHex_(sessionToken);
-}
-
-/**
- * @param {string} email
- * @return {{sessionToken: string, expiresAt: string, email: string}}
- */
-function nn_issueSession_(email) {
-  var token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-  var now = new Date();
-  var exp = new Date(now.getTime() + NN_PAGES_SESSION_DAYS * 24 * 60 * 60 * 1000);
-  var rec = {
-    email: String(email || '').toLowerCase(),
-    issuedAt: now.toISOString(),
-    expiresAt: exp.toISOString(),
-  };
-  PropertiesService.getScriptProperties().setProperty(nn_sessionKey_(token), JSON.stringify(rec));
-  return { sessionToken: token, expiresAt: rec.expiresAt, email: rec.email };
-}
-
-/**
- * @param {string} sessionToken
- * @return {{ok: boolean, email?: string, error?: string}}
- */
-function nn_validateSession_(sessionToken) {
-  var token = String(sessionToken || '').trim();
-  if (!token) return { ok: false, error: 'Session token is required' };
-  var raw = PropertiesService.getScriptProperties().getProperty(nn_sessionKey_(token));
-  if (!raw) return { ok: false, error: 'Session not found' };
-  try {
-    var rec = JSON.parse(raw);
-    var email = String(rec.email || '').toLowerCase();
-    var exp = new Date(String(rec.expiresAt || ''));
-    if (!email || isNaN(exp.getTime())) return { ok: false, error: 'Session is invalid' };
-    if (Date.now() > exp.getTime()) return { ok: false, error: 'Session expired' };
-    return { ok: true, email: email };
-  } catch (e) {
-    return { ok: false, error: 'Session parse error' };
-  }
-}
-
 /**
  * Apps Script Execution API (scripts.run) から呼ぶ入口。
+ * 認証は行わない。呼び出し元の Google アカウント権限で Drive 等が実行される。
  * @param {{action: string, args?: any[]}} req
  * @return {*}
  */
 function nn_execApi(req) {
-  nn_requireAllowlistedUser_();
   const action = req && req.action ? String(req.action) : '';
   const args = req && Array.isArray(req.args) ? req.args : [];
   return nn_pagesApiDispatch_(action, args);
 }
 
 /**
- * GitHub Pages 等（別オリジン）からの呼び出し用 JSON API。
- * ブラウザの CORS プリフライトを避けるため、クライアントは Content-Type: text/plain で JSON を送る。
- * スクリプトプロパティ NICENOTES_PAGES_* が両方未設定のときは idToken / sessionToken 不要（オープン API）。
+ * 別オリジンからの JSON API。認証・トークン検証は行わない。
+ * ブラウザの CORS プリフライトを避けるため、Content-Type: text/plain で JSON を送ること。
  *
- * POST body JSON: `{ "action": string, "args": any[], "idToken"?: string, "sessionToken"?: string }`
+ * POST body JSON: `{ "action": string, "args": any[] }`
  * 応答: `{ "ok": true, "result": ... }` または `{ "ok": false, "error": string }`
  */
 function doPost(e) {
@@ -283,7 +149,7 @@ function doPost(e) {
     if (e && e.postData && typeof e.postData.contents === 'string') raw = e.postData.contents;
     else raw = '{}';
 
-    /** @type {{ idToken?: string, sessionToken?: string, action?: string, args?: unknown }} */
+    /** @type {{ action?: string, args?: unknown }} */
     let body;
     try {
       body = JSON.parse(raw || '{}');
@@ -292,62 +158,16 @@ function doPost(e) {
     }
 
     const action = String(body.action || '');
-    const strictAuth = nn_pagesAuthStrictEnabled_();
-
-    /** 両方のスクリプトプロパティ未設定時: セッション・ID トークン不要で API のみ受け付ける */
-    if (!strictAuth) {
-      try {
-        const argList = body.args !== undefined && body.args !== null ? body.args : [];
-        const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
-        return nn_pagesApiJsonOut_({ ok: true, result: result });
-      } catch (openErr) {
-        return nn_pagesApiJsonOut_({
-          ok: false,
-          error: openErr && openErr.message ? String(openErr.message) : String(openErr),
-        });
-      }
-    }
-
-    const idt = nn_verifyGoogleIdToken_(body.idToken);
-    const allowedEmails = nn_pagesAllowedEmails_();
-
-    function isAllowedEmail_(email) {
-      return allowedEmails.length > 0 && allowedEmails.indexOf(String(email || '').toLowerCase()) >= 0;
-    }
-
-    if (action === 'nn_authenticate') {
-      if (!idt.ok) {
-        return nn_pagesApiJsonOut_({
-          ok: false,
-          error: 'Unauthorized: ' + (idt.error || 'Invalid Google account'),
-        });
-      }
-      if (!isAllowedEmail_(idt.email)) {
-        return nn_pagesApiJsonOut_({
-          ok: false,
-          error: 'Forbidden: your Google account is not allowlisted',
-        });
-      }
-      return nn_pagesApiJsonOut_({ ok: true, result: nn_issueSession_(idt.email) });
-    }
-
-    const session = nn_validateSession_(body.sessionToken);
-    if (!session.ok) {
+    try {
+      const argList = body.args !== undefined && body.args !== null ? body.args : [];
+      const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
+      return nn_pagesApiJsonOut_({ ok: true, result: result });
+    } catch (dispatchErr) {
       return nn_pagesApiJsonOut_({
         ok: false,
-        error: 'Unauthorized: ' + (session.error || 'Invalid session'),
+        error: dispatchErr && dispatchErr.message ? String(dispatchErr.message) : String(dispatchErr),
       });
     }
-    if (!isAllowedEmail_(session.email)) {
-      return nn_pagesApiJsonOut_({
-        ok: false,
-        error: 'Forbidden: your Google account is not allowlisted',
-      });
-    }
-
-    const argList = body.args !== undefined && body.args !== null ? body.args : [];
-    const result = nn_pagesApiDispatch_(action, Array.isArray(argList) ? argList : []);
-    return nn_pagesApiJsonOut_({ ok: true, result: result });
   } catch (handlerErr) {
     return nn_pagesApiJsonOut_({
       ok: false,

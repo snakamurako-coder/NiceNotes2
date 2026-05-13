@@ -1,6 +1,5 @@
 # GitHub Pages に index.html をデプロイする。
-# Repository Settings → Secrets: NN_GAS_EXEC_URL（/exec で終わる Web アプリ URL）, NN_GAS_API_TOKEN
-# Script Editor → プロジェクトの設定 → スクリプト プロパティ: NICENOTES_PAGES_API_TOKEN に同じトークンを保存
+# Repository Settings → Secrets: NN_GAS_EXEC_URL（/exec で終わる Web アプリ URL）
 name: Deploy GitHub Pages
 
 on:
@@ -33,7 +32,6 @@ jobs:
       - name: Prepare site
         env:
           NN_GAS_EXEC_URL: ${{ secrets.NN_GAS_EXEC_URL }}
-          NN_GAS_API_TOKEN: ${{ secrets.NN_GAS_API_TOKEN }}
         run: |
           mkdir -p _site
           cp index.html _site/index.html

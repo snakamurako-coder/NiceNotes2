@@ -626,17 +626,12 @@
     /** GitHub Actions がデプロイ時に上書き可。GAS 内表示では google.script.run が優先され、この URL は未使用になることがあります。 */
     window.NN_GAS_EXEC_URL =
       'https://script.google.com/macros/s/AKfycbzVKfA43QMiWDj41FWrYNhwtRSM6M_GdGetsXLQWZoFeQdHSnBjDX4JXgmzD07WqJ71/exec';
-    window.NN_GAS_API_TOKEN = '';
 
     function nnGasExecUrl() {
       var u = window.NN_GAS_EXEC_URL;
       return typeof u === 'string' ? u.trim() : '';
     }
-    function nnGasApiToken() {
-      var t = window.NN_GAS_API_TOKEN;
-      return typeof t === 'string' ? t.trim() : '';
-    }
-    /** google.script.run または Pages 向け POST API */
+    /** google.script.run または同一 GAS の exec へ POST（認証なし・ユーザーの Google セッションで Drive が動く） */
     function nnGasCall(action, args) {
       args = args || [];
       return new Promise(function (resolve, reject) {
@@ -663,16 +658,19 @@
           return;
         }
         var url = nnGasExecUrl();
-        var tok = nnGasApiToken();
-        if (!url || !tok) {
-          reject(new Error('GAS の exec URL と API トークンが index に設定されていません。'));
+        if (!url) {
+          reject(
+            new Error(
+              'GAS の exec URL（window.NN_GAS_EXEC_URL）が未設定です。ウェブアプリの /exec を index に設定するか、このアプリを GAS から開いてください。'
+            )
+          );
           return;
         }
         fetch(url, {
           method: 'POST',
           credentials: 'omit',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ token: tok, action: action, args: args })
+          body: JSON.stringify({ action: action, args: args })
         })
           .then(function (r) {
             return r.text();
@@ -2527,8 +2525,7 @@
       function nnIsGas() {
         if (typeof google !== 'undefined' && google.script && google.script.run) return true;
         var u = typeof window.NN_GAS_EXEC_URL === 'string' ? window.NN_GAS_EXEC_URL.trim() : '';
-        var tok = typeof window.NN_GAS_API_TOKEN === 'string' ? window.NN_GAS_API_TOKEN.trim() : '';
-        return !!(u && tok);
+        return !!u;
       }
 
       function nnUuid() {
