@@ -1045,7 +1045,19 @@
     window.onload = function () {
       nnRefreshCollaborationToolbar();
       showLoader('システムを初期設定中...');
-      nnGasCall('initializeApp', [])
+      var initMs = 90000;
+      var initTimeout = new Promise(function (_, reject) {
+        setTimeout(function () {
+          reject(
+            new Error(
+              '初期化がタイムアウトしました（' +
+                Math.round(initMs / 1000) +
+                '秒）。GAS のデプロイに gas-bridge.html が含まれているか、NN_GAS_EXEC_URL が正しいか確認してください。'
+            )
+          );
+        }, initMs);
+      });
+      Promise.race([nnGasCall('initializeApp', []), initTimeout])
         .then(function (res) {
           hideLoader();
           if (res && res.success) {
@@ -1058,11 +1070,19 @@
           } else {
             alert(res && res.error ? res.error : '初期化に失敗しました');
             loadFolderTree(false);
+            startupWireMainMenu();
+            nnWirePdfSlotTabsOnce();
+            showStartupGate();
           }
         })
-        .catch(function () {
+        .catch(function (err) {
           hideLoader();
+          var msg = err && err.message ? String(err.message) : String(err || '初期化に失敗しました');
+          alert(msg);
           loadFolderTree(false);
+          startupWireMainMenu();
+          nnWirePdfSlotTabsOnce();
+          showStartupGate();
         });
     };
     function showLoader(text) { loaderText.textContent = text; loader.style.display = 'flex'; }

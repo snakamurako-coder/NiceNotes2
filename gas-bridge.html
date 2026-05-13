@@ -30,7 +30,7 @@
             return;
           }
           try {
-            var runner = google.script.run
+            google.script.run
               .withSuccessHandler(function (result) {
                 send({ nnGasReply: true, id: id, ok: true, result: result });
               })
@@ -42,18 +42,8 @@
                       ? err.details
                       : String(err || 'GAS failure');
                 send({ nnGasReply: true, id: id, ok: false, error: m });
-              });
-            var fn = runner[action];
-            if (typeof fn !== 'function') {
-              send({
-                nnGasReply: true,
-                id: id,
-                ok: false,
-                error: 'Unknown server function: ' + action,
-              });
-              return;
-            }
-            fn.apply(runner, args);
+              })
+              .nn_gasBridgeRun(action, args);
           } catch (ex) {
             send({ nnGasReply: true, id: id, ok: false, error: String(ex) });
           }

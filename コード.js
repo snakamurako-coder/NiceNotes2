@@ -238,6 +238,18 @@ function nn_pagesApiDispatch_(action, args) {
   }
 }
 
+/**
+ * iframe ブリッジ専用。クライアントの google.script.run は runner[action] の動的呼び出しができないため、
+ * 常にこの固定名のみを呼び出し、サーバーで action にディスパッチする。
+ * @param {string} action
+ * @param {any[]} args
+ * @return {*}
+ */
+function nn_gasBridgeRun(action, args) {
+  const a = Array.isArray(args) ? args : [];
+  return nn_pagesApiDispatch_(String(action || ''), a);
+}
+
 function getFileList(mode) {
   try {
     const props = PropertiesService.getScriptProperties();
