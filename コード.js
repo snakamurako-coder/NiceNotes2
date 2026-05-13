@@ -1,4 +1,10 @@
-function doGet() {
+function doGet(e) {
+  /** GitHub Pages 等から iframe 経由で google.script.run へ中継する軽量ページ */
+  if (e && e.parameter && String(e.parameter.nnGasBridge || '') === '1') {
+    return HtmlService.createHtmlOutputFromFile('gas-bridge')
+      .setTitle('NN-GAS-Bridge')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  }
   return HtmlService.createHtmlOutputFromFile('index')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
     .setTitle('NiceNotes2 · 会議資料ワークスペース');

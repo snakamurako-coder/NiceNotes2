@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <title>NN-GAS-Bridge</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        function send(obj) {
+          try {
+            window.parent.postMessage(JSON.stringify(obj), '*');
+          } catch (e) {}
+        }
+        send({ nnGasBridgeReady: true });
+        window.addEventListener('message', function (ev) {
+          var msg;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch (e) {
+            return;
+          }
+          if (!msg || msg.nnGasCall !== true) return;
+          var id = msg.id;
+          var action = msg.action;
+          var args = Array.isArray(msg.args) ? msg.args : [];
+          if (!action) {
+            send({ nnGasReply: true, id: id, ok: false, error: 'action required' });
+            return;
+          }
+          try {
+            var runner = google.script.run
+              .withSuccessHandler(function (result) {
+                send({ nnGasReply: true, id: id, ok: true, result: result });
+              })
+              .withFailureHandler(function (err) {
+                var m =
+                  err && typeof err.message === 'string'
+                    ? err.message
+                    : err && typeof err === 'object' && typeof err.details === 'string'
+                      ? err.details
+                      : String(err || 'GAS failure');
+                send({ nnGasReply: true, id: id, ok: false, error: m });
+              });
+            var fn = runner[action];
+            if (typeof fn !== 'function') {
+              send({
+                nnGasReply: true,
+                id: id,
+                ok: false,
+                error: 'Unknown server function: ' + action,
+              });
+              return;
+            }
+            fn.apply(runner, args);
+          } catch (ex) {
+            send({ nnGasReply: true, id: id, ok: false, error: String(ex) });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

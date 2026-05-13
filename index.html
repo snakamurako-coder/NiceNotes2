@@ -46,8 +46,17 @@
     #host-frame::after { content: "現在の発表箇所"; position: absolute; top: -22px; left: -3px; background: #ff0000; color: #fff; font-size: 12px; padding: 3px 8px; font-weight: bold; border-radius: 4px 4px 0 0; }
 
     #home-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #f0f2f5; z-index: 500; display: flex; flex-direction: column; }
-    .home-header { background: #fff; padding: 15px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
-    .home-header h2 { margin: 0; font-size: 20px; color: #333; }
+    .home-header { background: #fff; padding: 15px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .home-header h2 { margin: 0; font-size: 20px; color: #333; flex: 1; min-width: 0; line-height: 1.3; }
+    .home-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
+    .home-header-actions .home-nav-btn {
+      padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #dadce0; background: #fff; cursor: pointer;
+      font-weight: 600; color: #202124; white-space: nowrap; line-height: 1.3;
+    }
+    .home-header-actions .home-nav-btn:hover { background: #f8f9fa; border-color: #bdc1c6; }
+    .home-header-actions .home-nav-btn.home-nav-btn--pdf { border-color: #1a73e8; color: #174ea6; background: #e8f0fe; }
+    .home-header-actions .home-nav-btn.home-nav-btn--tasks { border-color: #137333; color: #137333; background: #e6f4ea; }
+    .home-header-actions #btn-close-home { font-weight: 600; }
     .home-content { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 20px; overflow: hidden; max-width: 1200px; margin: 0 auto; width: 100%; box-sizing: border-box;}
     .quick-access { display: flex; gap: 20px; flex-shrink: 0; }
     .meeting-card { background: #fff; padding: 15px; border-radius: 8px; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; }
@@ -418,7 +427,11 @@
   <div id="home-screen">
     <div class="home-header">
       <h2>📁 NiceNotes2 ワークスペース</h2>
-      <button type="button" onclick="closeHome()" id="btn-close-home" style="display:none; background:#e8eaed; border:none; padding:8px 15px; cursor:pointer;">✕ ビューアに戻る</button>
+      <div class="home-header-actions">
+        <button type="button" class="home-nav-btn home-nav-btn--pdf" onclick="nnGoFromHomeToPdfAnnotate()">PDF注釈</button>
+        <button type="button" class="home-nav-btn home-nav-btn--tasks" onclick="nnGoFromHomeToTasks()">タスク管理</button>
+        <button type="button" class="home-nav-btn" onclick="closeHome()" id="btn-close-home" style="display:none;">✕ ビューアに戻る</button>
+      </div>
     </div>
     <div class="home-content">
       <div class="quick-access">
@@ -631,7 +644,120 @@
       var u = window.NN_GAS_EXEC_URL;
       return typeof u === 'string' ? u.trim() : '';
     }
-    /** google.script.run または同一 GAS の exec へ POST（認証なし・ユーザーの Google セッションで Drive が動く） */
+
+    /** GitHub Pages 等: GAS は CORS 非対応のため fetch せず iframe + postMessage で google.script.run を中継する */
+    var nnGasBridgeIframe = null;
+    var nnGasBridgeReady = false;
+    var nnGasBridgePending = Object.create(null);
+    var nnGasBridgeMsgSeq = 0;
+
+    function nnInitGasBridgeListener_() {
+      if (window.__nnGasBridgeListener) return;
+      window.__nnGasBridgeListener = true;
+      window.addEventListener('message', function (ev) {
+        if (!nnGasBridgeIframe || ev.source !== nnGasBridgeIframe.contentWindow) return;
+        var o;
+        try {
+          o = JSON.parse(ev.data);
+        } catch (e) {
+          return;
+        }
+        if (o && o.nnGasBridgeReady) {
+          nnGasBridgeReady = true;
+          return;
+        }
+        if (o && o.nnGasReply && nnGasBridgePending[o.id]) {
+          var p = nnGasBridgePending[o.id];
+          delete nnGasBridgePending[o.id];
+          if (o.ok) p.resolve(o.result);
+          else p.reject(new Error(o.error || 'GAS error'));
+        }
+      });
+    }
+
+    function nnEnsureGasBridgeIframe_() {
+      nnInitGasBridgeListener_();
+      return new Promise(function (resolve, reject) {
+        var urlBase = nnGasExecUrl();
+        if (!urlBase) {
+          reject(
+            new Error(
+              'GAS の exec URL（window.NN_GAS_EXEC_URL）が未設定です。ウェブアプリの /exec を index に設定するか、このアプリを GAS から開いてください。'
+            )
+          );
+          return;
+        }
+        if (nnGasBridgeIframe && nnGasBridgeReady) {
+          resolve();
+          return;
+        }
+        if (nnGasBridgeIframe && !nnGasBridgeReady) {
+          var n = 0;
+          var t = setInterval(function () {
+            if (nnGasBridgeReady) {
+              clearInterval(t);
+              resolve();
+              return;
+            }
+            if (++n > 400) {
+              clearInterval(t);
+              reject(new Error('GAS bridge が準備できませんでした（iframe）。X-Frame 許可と URL を確認してください。'));
+            }
+          }, 50);
+          return;
+        }
+        var sep = urlBase.indexOf('?') >= 0 ? '&' : '?';
+        var url = urlBase + sep + 'nnGasBridge=1';
+        nnGasBridgeReady = false;
+        nnGasBridgeIframe = document.createElement('iframe');
+        nnGasBridgeIframe.setAttribute('title', 'NiceNotes GAS bridge');
+        nnGasBridgeIframe.style.cssText =
+          'position:fixed;width:0;height:0;border:0;visibility:hidden;pointer-events:none;left:-9999px;top:0';
+        nnGasBridgeIframe.src = url;
+        (document.body || document.documentElement).appendChild(nnGasBridgeIframe);
+        var to = setTimeout(function () {
+          reject(new Error('GAS bridge の読み込みがタイムアウトしました（45秒）'));
+        }, 45000);
+        var n2 = 0;
+        var t2 = setInterval(function () {
+          if (nnGasBridgeReady) {
+            clearInterval(t2);
+            clearTimeout(to);
+            resolve();
+            return;
+          }
+          if (++n2 > 400) {
+            clearInterval(t2);
+            clearTimeout(to);
+            reject(new Error('GAS bridge が応答しません（nnGasBridge=1 のページを確認）'));
+          }
+        }, 50);
+      });
+    }
+
+    function nnGasCallViaBridge_(action, args) {
+      return nnEnsureGasBridgeIframe_().then(function () {
+        return new Promise(function (resolve, reject) {
+          var id = 'nnb_' + ++nnGasBridgeMsgSeq + '_' + Date.now();
+          nnGasBridgePending[id] = { resolve: resolve, reject: reject };
+          var payload = JSON.stringify({
+            nnGasCall: true,
+            id: id,
+            action: action,
+            args: args,
+          });
+          nnGasBridgeIframe.contentWindow.postMessage(payload, '*');
+          setTimeout(function () {
+            if (nnGasBridgePending[id]) {
+              delete nnGasBridgePending[id];
+              reject(new Error('GAS bridge 呼び出しタイムアウト: ' + action));
+            }
+          }, 120000);
+        });
+      });
+    }
+
+    /** google.script.run（GAS 同一オリジン）または iframe ブリッジ（別オリジン） */
     function nnGasCall(action, args) {
       args = args || [];
       return new Promise(function (resolve, reject) {
@@ -657,41 +783,7 @@
           }
           return;
         }
-        var url = nnGasExecUrl();
-        if (!url) {
-          reject(
-            new Error(
-              'GAS の exec URL（window.NN_GAS_EXEC_URL）が未設定です。ウェブアプリの /exec を index に設定するか、このアプリを GAS から開いてください。'
-            )
-          );
-          return;
-        }
-        fetch(url, {
-          method: 'POST',
-          credentials: 'omit',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: action, args: args })
-        })
-          .then(function (r) {
-            return r.text();
-          })
-          .then(function (text) {
-            var data;
-            try {
-              data = JSON.parse(text);
-            } catch (e2) {
-              reject(new Error('API の応答が JSON ではありません: ' + String(text).slice(0, 200)));
-              return;
-            }
-            if (!data || !data.ok) {
-              reject(new Error(data && data.error ? data.error : 'API error'));
-              return;
-            }
-            resolve(data.result);
-          })
-          .catch(function (fetchErr) {
-            reject(fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)));
-          });
+        nnGasCallViaBridge_(action, args).then(resolve, reject);
       });
     }
 
@@ -1075,6 +1167,28 @@
         pdfBtn.classList.add('active-mode');
       }
       renderQuickAccess();
+    }
+
+    /** ワークスペースヘッダーから PDF 注釈（ツールバー＋ビューア）へ */
+    function nnGoFromHomeToPdfAnnotate() {
+      if (homeScreen) homeScreen.style.display = 'none';
+      setAppMode('pdf');
+      var viewer = document.getElementById('viewer-container');
+      if (viewer) {
+        viewer.style.display = 'flex';
+        nnUpdatePdfSlotTabStyles();
+        nnShowPdfSlotTabs(!!currentFileId);
+        nnWirePdfSlotTabsOnce();
+        if (currentFileId) nnRefreshCollaborationToolbar();
+      }
+      if (btnCloseHome) btnCloseHome.style.display = currentFileId ? 'block' : 'none';
+    }
+
+    /** ワークスペースヘッダーからタスク管理パネルへ */
+    function nnGoFromHomeToTasks() {
+      if (homeScreen) homeScreen.style.display = 'none';
+      setAppMode('tasks');
+      if (btnCloseHome) btnCloseHome.style.display = 'none';
     }
 
     function closeHome() {
