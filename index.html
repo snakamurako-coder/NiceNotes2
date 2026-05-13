@@ -757,8 +757,10 @@
       });
     }
 
-    /** google.script.run（GAS 同一オリジン）または iframe ブリッジ（別オリジン） */
-    function nnGasCall(action, args) {
+    var nnBackendInitInFlight = null;
+
+    /** google.script.run（GAS 同一オリジン）または iframe ブリッジ（別オリジン）。initializeApp 以外はバックエンド準備後に実行 */
+    function nnGasCallImpl_(action, args) {
       args = args || [];
       return new Promise(function (resolve, reject) {
         if (typeof google !== 'undefined' && google.script && google.script.run) {
@@ -785,6 +787,16 @@
         }
         nnGasCallViaBridge_(action, args).then(resolve, reject);
       });
+    }
+
+    function nnGasCall(action, args) {
+      args = args || [];
+      if (action !== 'initializeApp' && !window.nnAppBackendReady) {
+        return nnEnsureBackendReady_().then(function () {
+          return nnGasCallImpl_(action, args);
+        });
+      }
+      return nnGasCallImpl_(action, args);
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
@@ -1043,50 +1055,67 @@
     }
 
     window.onload = function () {
+      window.nnAppBackendReady = false;
       nnRefreshCollaborationToolbar();
-      showLoader('システムを初期設定中...');
-      var initMs = 90000;
-      var initTimeout = new Promise(function (_, reject) {
-        setTimeout(function () {
-          reject(
-            new Error(
-              '初期化がタイムアウトしました（' +
-                Math.round(initMs / 1000) +
-                '秒）。GAS のデプロイに gas-bridge.html が含まれているか、NN_GAS_EXEC_URL が正しいか確認してください。'
-            )
-          );
-        }, initMs);
-      });
-      Promise.race([nnGasCall('initializeApp', []), initTimeout])
-        .then(function (res) {
-          hideLoader();
-          if (res && res.success) {
-            renderQuickAccess();
-            loadFolderTree(false);
-            nnPreloadLastPdfInBackground();
-            startupWireMainMenu();
-            nnWirePdfSlotTabsOnce();
-            showStartupGate();
-          } else {
-            alert(res && res.error ? res.error : '初期化に失敗しました');
-            loadFolderTree(false);
-            startupWireMainMenu();
-            nnWirePdfSlotTabsOnce();
-            showStartupGate();
-          }
-        })
-        .catch(function (err) {
-          hideLoader();
-          var msg = err && err.message ? String(err.message) : String(err || '初期化に失敗しました');
-          alert(msg);
-          loadFolderTree(false);
-          startupWireMainMenu();
-          nnWirePdfSlotTabsOnce();
-          showStartupGate();
-        });
+      renderQuickAccess();
+      startupWireMainMenu();
+      nnWirePdfSlotTabsOnce();
+      showStartupGate();
+      hideLoader();
     };
     function showLoader(text) { loaderText.textContent = text; loader.style.display = 'flex'; }
     function hideLoader() { loader.style.display = 'none'; }
+
+    function nnBackendAuthHintIfNeeded_(msg) {
+      var s = String(msg || '');
+      if (/許可を完了してから/.test(s)) return s;
+      if (
+        /authorization|permission|access denied|not authorized|認証|権限|許可|OAuth|403|401/i.test(s)
+      ) {
+        return s + '（Google の許可を完了してから、もう一度操作してください。）';
+      }
+      return s;
+    }
+
+    function nnEnsureBackendReady_() {
+      if (window.nnAppBackendReady) return Promise.resolve();
+      if (nnBackendInitInFlight) return nnBackendInitInFlight;
+      var initMs = 90000;
+      nnBackendInitInFlight = new Promise(function (resolve, reject) {
+        showLoader('Google Drive の準備中…初回は許可確認が出ることがあります');
+        var initTimeout = new Promise(function (_, rej) {
+          setTimeout(function () {
+            rej(
+              new Error(
+                'Drive 準備がタイムアウトしました（' +
+                  Math.round(initMs / 1000) +
+                  '秒）。許可確認を完了してから再試行するか、GAS のデプロイと NN_GAS_EXEC_URL を確認してください。'
+              )
+            );
+          }, initMs);
+        });
+        Promise.race([nnGasCallImpl_('initializeApp', []), initTimeout])
+          .then(function (res) {
+            hideLoader();
+            if (res && res.success) {
+              window.nnAppBackendReady = true;
+              nnBackendInitInFlight = null;
+              resolve();
+            } else {
+              nnBackendInitInFlight = null;
+              var errMsg = res && res.error ? String(res.error) : 'Drive の準備に失敗しました';
+              reject(new Error(nnBackendAuthHintIfNeeded_(errMsg)));
+            }
+          })
+          .catch(function (err) {
+            hideLoader();
+            nnBackendInitInFlight = null;
+            var raw = err && err.message ? String(err.message) : String(err || 'Drive の準備に失敗しました');
+            reject(new Error(nnBackendAuthHintIfNeeded_(raw)));
+          });
+      });
+      return nnBackendInitInFlight;
+    }
 
     function openAddModal() { document.getElementById('add-modal').style.display = 'flex'; }
     function closeAddModal() { document.getElementById('add-modal').style.display = 'none'; }
@@ -1187,6 +1216,8 @@
         pdfBtn.classList.add('active-mode');
       }
       renderQuickAccess();
+      loadFolderTree(false);
+      nnPreloadLastPdfInBackground();
     }
 
     /** ワークスペースヘッダーから PDF 注釈（ツールバー＋ビューア）へ */
