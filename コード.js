@@ -1,7 +1,7 @@
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
-    .setTitle('NiceNotes · 会議資料ワークスペース');
+    .setTitle('NiceNotes2 · 会議資料ワークスペース');
 }
 
 /** Script Properties: 許可メール（改行/カンマ/セミコロン区切り） */
@@ -387,6 +387,16 @@ function nn_pagesApiDispatch_(action, args) {
       return saveAnnotation.apply(null, a);
     case 'getFileList':
       return getFileList.apply(null, a);
+    case 'nn_getWorkspacePrefs':
+      return nn_getWorkspacePrefs.apply(null, a);
+    case 'nn_setFolderViewMode':
+      return nn_setFolderViewMode.apply(null, a);
+    case 'nn_setTreeManualOrder':
+      return nn_setTreeManualOrder.apply(null, a);
+    case 'nn_moveDriveFile':
+      return nn_moveDriveFile.apply(null, a);
+    case 'nn_moveDriveFolder':
+      return nn_moveDriveFolder.apply(null, a);
     case 'getFileData':
       return getFileData.apply(null, a);
     case 'recognizeSentence':
@@ -490,30 +500,68 @@ function recognizeSentence(allStrokes) {
 
 // =============================================================================
 // 職員会議ワークスペース（Drive ツリー・資料同期・手書き共有）
-// google.script.run で index.html から呼び出す。ScriptProperties キーは元アプリ互換。
+// google.script.run で index.html から呼び出す。
+// MAIN_FOLDER_ID はユーザー別 UserProperties。ScriptProperties の値は移行用（作成者のみ）。
 // =============================================================================
 
-function initializeApp() {
-  let mainFolderId = nn_getWorkspaceFolderId_();
-
-  if (!mainFolderId) {
-    try {
-      var parentFolder;
-      if (nn_isCurrentUserScriptOwner_()) {
-        const scriptId = ScriptApp.getScriptId();
-        const parents = DriveApp.getFileById(scriptId).getParents();
-        parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
-      } else {
-        parentFolder = DriveApp.getRootFolder();
-      }
-      const newFolder = parentFolder.createFolder('会議資料_Workspace');
-      mainFolderId = newFolder.getId();
-      nn_setWorkspaceFolderIdForCurrentUser_(mainFolderId);
-    } catch (e) {
-      return { success: false, error: '初期化に失敗しました: ' + e.toString() };
-    }
+/** @return {boolean} 現在の実行ユーザーが Apps Script プロジェクトの所有者（アプリ作成者）か */
+function nn_isScriptOwnerUser_() {
+  try {
+    const ownerEmail = DriveApp.getFileById(ScriptApp.getScriptId()).getOwner().getEmail();
+    const me =
+      Session.getEffectiveUser().getEmail() ||
+      Session.getActiveUser().getEmail() ||
+      '';
+    if (!ownerEmail || !me) return false;
+    return ownerEmail.toLowerCase() === me.toLowerCase();
+  } catch (e) {
+    return false;
   }
-  return { success: true };
+}
+
+/**
+ * 会議ワークスペースのルート（管理フォルダ）ID。
+ * 初回は initializeApp が UserProperties に設定する。旧 ScriptProperties は作成者のみ引き継ぎ。
+ * @return {string} 未設定時は空文字
+ */
+function nn_getMainFolderId_() {
+  const userProps = PropertiesService.getUserProperties();
+  let id = userProps.getProperty('MAIN_FOLDER_ID');
+  if (id) return id;
+  const legacy = PropertiesService.getScriptProperties().getProperty('MAIN_FOLDER_ID');
+  if (legacy && nn_isScriptOwnerUser_()) {
+    userProps.setProperty('MAIN_FOLDER_ID', legacy);
+    return legacy;
+  }
+  return '';
+}
+
+function initializeApp() {
+  const userProps = PropertiesService.getUserProperties();
+  if (userProps.getProperty('MAIN_FOLDER_ID')) {
+    return { success: true };
+  }
+  const scriptProps = PropertiesService.getScriptProperties();
+  const legacy = scriptProps.getProperty('MAIN_FOLDER_ID');
+  if (legacy && nn_isScriptOwnerUser_()) {
+    userProps.setProperty('MAIN_FOLDER_ID', legacy);
+    return { success: true };
+  }
+  try {
+    let parentFolder;
+    if (nn_isScriptOwnerUser_()) {
+      const scriptId = ScriptApp.getScriptId();
+      const parents = DriveApp.getFileById(scriptId).getParents();
+      parentFolder = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+    } else {
+      parentFolder = DriveApp.getRootFolder();
+    }
+    const newFolder = parentFolder.createFolder('MyNiceNotes');
+    userProps.setProperty('MAIN_FOLDER_ID', newFolder.getId());
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: '初期化に失敗しました: ' + e.toString() };
+  }
 }
 
 /**
@@ -525,7 +573,7 @@ function initializeApp() {
  */
 function nnSaveCaptureToDrive(base64, mimeType, fileName) {
   try {
-    const mainFolderId = nn_getWorkspaceFolderId_();
+    const mainFolderId = nn_getMainFolderId_();
     if (!mainFolderId) {
       return { success: false, error: 'MAIN_FOLDER_ID がありません。' };
     }
@@ -574,9 +622,9 @@ function registerFolder(inputData, isOrg) {
 function importPdf(inputData) {
   const id = extractIdFromUrl(inputData);
   try {
-    const mainFolderId = nn_getWorkspaceFolderId_();
+    const mainFolderId = nn_getMainFolderId_();
     if (!mainFolderId) {
-      return { success: false, error: 'ワークスペースが未初期化です。先に初期化してください。' };
+      return { success: false, error: 'ワークスペースが未初期化です。ページを再読み込みしてください。' };
     }
     const mainFolder = DriveApp.getFolderById(mainFolderId);
 
@@ -633,7 +681,7 @@ function getFolderTree(forceRefresh) {
   }
 
   let roots = [];
-  const mainId = nn_getWorkspaceFolderId_();
+  const mainId = nn_getMainFolderId_();
   if (mainId) roots.push(mainId);
   roots = roots.concat(nn_registeredFoldersArr_());
   roots = Array.from(new Set(roots));
@@ -644,7 +692,13 @@ function getFolderTree(forceRefresh) {
 
   function scan(folder, parentId) {
     const currentId = folder.getId();
-    resultFolders.push({ id: currentId, name: folder.getName(), parentId: parentId });
+    resultFolders.push({
+      id: currentId,
+      name: folder.getName(),
+      parentId: parentId,
+      updated: folder.getLastUpdated().getTime(),
+      created: folder.getDateCreated().getTime(),
+    });
 
     const fIter = folder.getFiles();
     while (fIter.hasNext()) {
@@ -684,6 +738,206 @@ function getFolderTree(forceRefresh) {
   else rootFolder.createFile(cacheFileName, jsonString, MimeType.PLAIN_TEXT);
 
   return result;
+}
+
+// --- ワークスペース UserProperties（フォルダ表示モード・手動並び）-----------------
+
+const NN_UPROP_FOLDER_VIEW_MODES = 'NN_FOLDER_VIEW_MODES';
+const NN_UPROP_TREE_MANUAL_ORDER = 'NN_TREE_MANUAL_ORDER';
+
+function nn_upropGetJson_(key, fallback) {
+  const raw = PropertiesService.getUserProperties().getProperty(key);
+  if (!raw) return fallback;
+  try {
+    const o = JSON.parse(raw);
+    return o !== null && typeof o === 'object' ? o : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function nn_upropSetJson_(key, obj) {
+  PropertiesService.getUserProperties().setProperty(key, JSON.stringify(obj));
+}
+
+/**
+ * @return {{ folderViewModes: Object.<string,string>, treeManualOrder: { v:number, rootFolderIds: string[], childFolders: Object.<string,string[]>, filesByFolder: Object.<string,string[]> } }}
+ */
+function nn_getWorkspacePrefs() {
+  const modes = nn_upropGetJson_(NN_UPROP_FOLDER_VIEW_MODES, {});
+  const order = nn_upropGetJson_(NN_UPROP_TREE_MANUAL_ORDER, {
+    v: 1,
+    rootFolderIds: [],
+    childFolders: {},
+    filesByFolder: {},
+  });
+  if (!order || typeof order !== 'object') {
+    return { folderViewModes: modes, treeManualOrder: { v: 1, rootFolderIds: [], childFolders: {}, filesByFolder: {} } };
+  }
+  return {
+    folderViewModes: typeof modes === 'object' && modes !== null ? modes : {},
+    treeManualOrder: {
+      v: order.v != null ? order.v : 1,
+      rootFolderIds: Array.isArray(order.rootFolderIds) ? order.rootFolderIds : [],
+      childFolders: typeof order.childFolders === 'object' && order.childFolders !== null ? order.childFolders : {},
+      filesByFolder: typeof order.filesByFolder === 'object' && order.filesByFolder !== null ? order.filesByFolder : {},
+    },
+  };
+}
+
+/**
+ * @param {string} folderId
+ * @param {string} mode seamless|single
+ */
+function nn_setFolderViewMode(folderId, mode) {
+  const id = nn_cellStr_(folderId);
+  const m = nn_cellStr_(mode);
+  if (!id) {
+    throw new Error('NN_E_FOLDER_ID');
+  }
+  if (m !== 'seamless' && m !== 'single') {
+    throw new Error('NN_E_VIEW_MODE');
+  }
+  const all = nn_getWorkspacePrefs().folderViewModes || {};
+  all[id] = m;
+  nn_upropSetJson_(NN_UPROP_FOLDER_VIEW_MODES, all);
+  return { success: true };
+}
+
+/**
+ * @param {*} orderObj nn_getWorkspacePrefs().treeManualOrder と同形
+ */
+function nn_setTreeManualOrder(orderObj) {
+  const o = orderObj && typeof orderObj === 'object' ? orderObj : {};
+  nn_upropSetJson_(NN_UPROP_TREE_MANUAL_ORDER, {
+    v: 1,
+    rootFolderIds: Array.isArray(o.rootFolderIds) ? o.rootFolderIds.map(String) : [],
+    childFolders: typeof o.childFolders === 'object' && o.childFolders !== null ? o.childFolders : {},
+    filesByFolder: typeof o.filesByFolder === 'object' && o.filesByFolder !== null ? o.filesByFolder : {},
+  });
+  return { success: true };
+}
+
+function nn_getTreeRootFolderIds_() {
+  const props = PropertiesService.getScriptProperties();
+  const roots = [];
+  const mainId = nn_getMainFolderId_();
+  if (mainId) roots.push(mainId);
+  const registeredStr = props.getProperty('REGISTERED_FOLDERS');
+  if (registeredStr) {
+    try {
+      const arr = JSON.parse(registeredStr);
+      if (Array.isArray(arr)) {
+        let i;
+        for (i = 0; i < arr.length; i++) {
+          if (arr[i]) roots.push(String(arr[i]));
+        }
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  return Array.from(new Set(roots));
+}
+
+/**
+ * ワークスペースから到達可能な全フォルダ id（ルート＋子孫）
+ * @return {Object.<string,boolean>}
+ */
+function nn_collectAccessibleFolderIdsSet_() {
+  const set = {};
+  function scanFolder(folder) {
+    const id = folder.getId();
+    set[id] = true;
+    const subs = folder.getFolders();
+    while (subs.hasNext()) {
+      scanFolder(subs.next());
+    }
+  }
+  const roots = nn_getTreeRootFolderIds_();
+  let r;
+  for (r = 0; r < roots.length; r++) {
+    try {
+      scanFolder(DriveApp.getFolderById(roots[r]));
+    } catch (e) {
+      Logger.log('nn_collectAccessibleFolderIdsSet_: skip root ' + roots[r] + ' ' + e);
+    }
+  }
+  return set;
+}
+
+function nn_getSingleParentFolderId_(fileOrFolderId) {
+  const it = DriveApp.getFileById(fileOrFolderId).getParents();
+  return it.hasNext() ? it.next().getId() : null;
+}
+
+/**
+ * newParent が movingFolder の子孫なら true（移動禁止）
+ */
+function nn_wouldCreateFolderCycle_(movingFolderId, newParentId) {
+  let cur = newParentId;
+  let g = 0;
+  while (cur && g++ < 300) {
+    if (cur === movingFolderId) {
+      return true;
+    }
+    cur = nn_getSingleParentFolderId_(cur);
+  }
+  return false;
+}
+
+/**
+ * @param {string} fileId
+ * @param {string} targetFolderId
+ */
+function nn_moveDriveFile(fileId, targetFolderId) {
+  const fid = nn_cellStr_(fileId);
+  const tid = nn_cellStr_(targetFolderId);
+  if (!fid || !tid) {
+    throw new Error('NN_E_MOVE_ARGS');
+  }
+  const allowed = nn_collectAccessibleFolderIdsSet_();
+  if (!allowed[tid]) {
+    throw new Error('NN_E_MOVE_TARGET_OUTSIDE');
+  }
+  const f = DriveApp.getFileById(fid);
+  const mime = f.getMimeType();
+  if (mime !== MimeType.PDF && mime !== MimeType.JPEG && mime !== MimeType.PNG) {
+    throw new Error('NN_E_MOVE_NOT_MEDIA');
+  }
+  const parIt = f.getParents();
+  if (parIt.hasNext()) {
+    const pid = parIt.next().getId();
+    if (!allowed[pid]) {
+      throw new Error('NN_E_MOVE_SOURCE_OUTSIDE');
+    }
+  }
+  f.moveTo(DriveApp.getFolderById(tid));
+  return { success: true };
+}
+
+/**
+ * @param {string} folderId
+ * @param {string} newParentId
+ */
+function nn_moveDriveFolder(folderId, newParentId) {
+  const cid = nn_cellStr_(folderId);
+  const pid = nn_cellStr_(newParentId);
+  if (!cid || !pid) {
+    throw new Error('NN_E_MOVE_ARGS');
+  }
+  if (cid === pid) {
+    throw new Error('NN_E_MOVE_SAME');
+  }
+  const allowed = nn_collectAccessibleFolderIdsSet_();
+  if (!allowed[cid] || !allowed[pid]) {
+    throw new Error('NN_E_MOVE_OUTSIDE');
+  }
+  if (nn_wouldCreateFolderCycle_(cid, pid)) {
+    throw new Error('NN_E_MOVE_CYCLE');
+  }
+  DriveApp.getFileById(cid).moveTo(DriveApp.getFolderById(pid));
+  return { success: true };
 }
 
 function updateMeetingState(stateJson) {
@@ -745,7 +999,8 @@ function getMeetingState() {
  * @property {?string} completedAt          ISO 8601 or null
  * @property {string} googleTaskId          N 列。サーバ管理。Google Tasks の task id。
  * @property {string} calendarEventId       O 列。サーバ管理。Calendar イベント id。
- * @property {string} repeatRule            P 列。繰り返し: 空/none/daily/weekly/monthly/yearly。
+ * @property {string} repeatRule            P 列。繰り返し: 空/none/daily/weekly/monthly/yearly または JSON。
+ * @property {?number=} visibleLeadDays     Q 列。期限の何日前から一覧に表示するか（空=制限なし）。
  */
 
 /**
@@ -757,11 +1012,11 @@ const NN_PROP_SHEET_ID = 'NICENOTES_SHEET_ID';
 const NN_PROP_TASKLIST_ID = 'NICENOTES_TASKLIST_ID';
 const NN_PROP_TASKLIST_MAP = 'NICENOTES_TASKLIST_MAP';
 const NN_PROP_CALENDAR_ID = 'NICENOTES_CALENDAR_ID';
-const NN_TASKLIST_TITLE = 'NiceNotes';
-const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes · ';
-const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes · 未分類';
+const NN_TASKLIST_TITLE = 'NiceNotes2';
+const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes2 · ';
+const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes2 · 未分類';
 const NN_TASKLIST_TITLE_MAX = 200;
-const NN_CALENDAR_NAME = 'NiceNotes';
+const NN_CALENDAR_NAME = 'NiceNotes2';
 const NN_LOCK_TIMEOUT_MS = 10000;
 
 /**
@@ -770,7 +1025,7 @@ const NN_LOCK_TIMEOUT_MS = 10000;
  */
 function nn_editorSampleTask_() {
   return {
-    title: 'NiceNotes test',
+    title: 'NiceNotes2 test',
     status: 'active',
     dueDate: '2026-05-20',
     startDate: '',
@@ -784,7 +1039,8 @@ function nn_editorSampleTask_() {
     completedAt: null,
     googleTaskId: '',
     calendarEventId: '',
-    repeatRule: ''
+    repeatRule: '',
+    visibleLeadDays: null
   };
 }
 
@@ -808,7 +1064,8 @@ const NN_COLUMNS = [
   'completedAt',     // M  ISO 8601 or 空
   'googleTaskId',    // N  Google Tasks API task id（サーバ管理）
   'calendarEventId', // O  Calendar イベント id（サーバ管理）
-  'repeatRule'       // P  繰り返し（Google Tasks recurrence / アプリ内ルーティーン）
+  'repeatRule',       // P  繰り返し（Google Tasks recurrence / アプリ内ルーティーン / JSON）
+  'visibleLeadDays'   // Q  期限の N 日前から表示（空=すぐ表示）
 ];
 
 const NN_STATUS_VALUES = ['active', 'completed', 'canceled'];
@@ -827,7 +1084,7 @@ function nn_initSpreadsheet() {
   if (id) {
     ss = SpreadsheetApp.openById(id);
   } else {
-    ss = SpreadsheetApp.create('NiceNotes Master');
+    ss = SpreadsheetApp.create('NiceNotes2 Master');
     id = ss.getId();
     props.setProperty(NN_PROP_SHEET_ID, id);
   }
@@ -877,7 +1134,7 @@ function nn_initSpreadsheet() {
     sheet.getRange(2, c, dataRowCount, 1).setNumberFormat('yyyy-mm-dd');
   });
 
-  ['updatedAt', 'completedAt', 'googleTaskId', 'calendarEventId', 'repeatRule'].forEach(function (name) {
+  ['updatedAt', 'completedAt', 'googleTaskId', 'calendarEventId', 'repeatRule', 'visibleLeadDays'].forEach(function (name) {
     const c = NN_COLUMNS.indexOf(name) + 1;
     sheet.getRange(2, c, dataRowCount, 1).setNumberFormat('@');
   });
@@ -885,10 +1142,13 @@ function nn_initSpreadsheet() {
   const sortCol = NN_COLUMNS.indexOf('sortOrder') + 1;
   sheet.getRange(2, sortCol, dataRowCount, 1).setNumberFormat('0');
 
+  const vldCol = NN_COLUMNS.indexOf('visibleLeadDays') + 1;
+  sheet.getRange(2, vldCol, dataRowCount, 1).setNumberFormat('0');
+
   sheet.autoResizeColumns(1, lastCol);
 
   const url = ss.getUrl();
-  Logger.log('NiceNotes spreadsheet ready: ' + url);
+  Logger.log('NiceNotes2 spreadsheet ready: ' + url);
   return { ok: true, spreadsheetId: id, url: url, sheetName: NN_SHEET_NAME };
 }
 
@@ -973,6 +1233,14 @@ function nn_rowToTask_(row) {
     sortOrder = 1024;
   }
   const completedRaw = nn_cellStr_(row[NN_COLUMNS.indexOf('completedAt')]);
+  let visibleLeadDays = null;
+  const vldRaw = row[NN_COLUMNS.indexOf('visibleLeadDays')];
+  if (vldRaw !== null && vldRaw !== undefined && vldRaw !== '') {
+    const n = typeof vldRaw === 'number' ? vldRaw : parseInt(String(vldRaw).trim(), 10);
+    if (!isNaN(n) && n >= 0) {
+      visibleLeadDays = n;
+    }
+  }
   return {
     id: nn_cellStr_(row[0]),
     area: nn_cellStr_(row[NN_COLUMNS.indexOf('area')]),
@@ -989,7 +1257,8 @@ function nn_rowToTask_(row) {
     completedAt: completedRaw === '' ? null : completedRaw,
     googleTaskId: nn_cellStr_(row[NN_COLUMNS.indexOf('googleTaskId')]),
     calendarEventId: nn_cellStr_(row[NN_COLUMNS.indexOf('calendarEventId')]),
-    repeatRule: nn_cellStr_(row[NN_COLUMNS.indexOf('repeatRule')])
+    repeatRule: nn_cellStr_(row[NN_COLUMNS.indexOf('repeatRule')]),
+    visibleLeadDays: visibleLeadDays
   };
 }
 
@@ -1018,7 +1287,8 @@ function nn_taskToRow_(task) {
     task.completedAt || '',
     task.googleTaskId || '',
     task.calendarEventId || '',
-    task.repeatRule || ''
+    task.repeatRule || '',
+    task.visibleLeadDays != null && task.visibleLeadDays !== '' ? task.visibleLeadDays : ''
   ];
 }
 
@@ -1301,6 +1571,15 @@ function nn_getOrCreateCalendar_() {
 }
 
 /**
+ * @param {number} dowMon1
+ * @return {string}
+ */
+function nn_rruleWeekdayToken_(dowMon1) {
+  const map = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR', 6: 'SA', 7: 'SU' };
+  return map[dowMon1] || 'MO';
+}
+
+/**
  * @param {Object} task
  * @return {string[]|null}
  */
@@ -1308,6 +1587,65 @@ function nn_repeatRuleToRecurrence_(task) {
   const r = nn_cellStr_(task.repeatRule || '');
   if (!r || r === 'none') {
     return null;
+  }
+  if (r.charAt(0) === '{') {
+    let o;
+    try {
+      o = JSON.parse(r);
+    } catch (e) {
+      return null;
+    }
+    if (!o || typeof o.k !== 'string') {
+      return null;
+    }
+    let rr = null;
+    switch (o.k) {
+      case 'daily':
+        rr = 'RRULE:FREQ=DAILY';
+        break;
+      case 'yearly':
+        rr = 'RRULE:FREQ=YEARLY';
+        break;
+      case 'weeklyByDay':
+        if (!o.dow || !o.dow.length) {
+          return null;
+        }
+        rr =
+          'RRULE:FREQ=WEEKLY;BYDAY=' +
+          o.dow
+            .map(function (d) {
+              return nn_rruleWeekdayToken_(parseInt(d, 10));
+            })
+            .join(',');
+        break;
+      case 'monthlyDom': {
+        const dom = parseInt(o.dom, 10);
+        if (isNaN(dom) || dom < 1 || dom > 31) {
+          return null;
+        }
+        rr = 'RRULE:FREQ=MONTHLY;BYMONTHDAY=' + dom;
+        break;
+      }
+      case 'monthlyNth': {
+        const nth = parseInt(o.nth, 10);
+        const dow = parseInt(o.dow, 10);
+        if (isNaN(dow) || dow < 1 || dow > 7) {
+          return null;
+        }
+        const tok = nn_rruleWeekdayToken_(dow);
+        if (nth === -1) {
+          rr = 'RRULE:FREQ=MONTHLY;BYDAY=-1' + tok;
+        } else if (nth >= 1 && nth <= 4) {
+          rr = 'RRULE:FREQ=MONTHLY;BYDAY=' + nth + tok;
+        } else {
+          return null;
+        }
+        break;
+      }
+      default:
+        return null;
+    }
+    return rr ? [rr] : null;
   }
   let rr;
   switch (r) {

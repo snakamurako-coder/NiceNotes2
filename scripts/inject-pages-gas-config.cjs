@@ -15,11 +15,11 @@ const url = process.env.NN_GAS_EXEC_URL || '';
 const token = process.env.NN_GAS_API_TOKEN || '';
 
 html = html.replace(
-  `window.NN_GAS_EXEC_URL = '';`,
+  /window\.NN_GAS_EXEC_URL\s*=\s*[\s\S]*?;/,
   `window.NN_GAS_EXEC_URL = ${JSON.stringify(url)};`
 );
 html = html.replace(
-  `window.NN_GAS_API_TOKEN = '';`,
+  /window\.NN_GAS_API_TOKEN\s*=\s*[\s\S]*?;/,
   `window.NN_GAS_API_TOKEN = ${JSON.stringify(token)};`
 );
 
